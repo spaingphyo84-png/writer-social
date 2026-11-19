@@ -1,0 +1,64 @@
+const en = {
+  missing_fields: 'Please fill in all required fields.',
+  invalid_email: 'Please enter a valid email address.',
+  password_short: 'Password must be at least 6 characters.',
+  email_exists: 'An account with this email already exists.',
+  invalid_credentials: 'Incorrect email or password.',
+  invalid_token: 'Your session has expired. Please sign in again.',
+  unauthorized: 'Please sign in to continue.',
+  forbidden: 'You are not allowed to do that.',
+  not_found: 'Not found.',
+  post_not_found: 'This post could not be found.',
+  comment_not_found: 'This comment could not be found.',
+  invalid_category: 'Please choose a valid category.',
+  title_required: 'A title is required.',
+  body_required: 'Some writing is required.',
+  title_too_long: 'The title is too long (maximum 200 characters).',
+  body_too_long: 'The writing is too long (maximum 20,000 characters).',
+  invalid_reaction: 'Please choose Love, Haha, or Sad.',
+  comment_required: 'Please write a comment.',
+  comment_too_long: 'The comment is too long (maximum 1,000 characters).',
+  video_blocked: 'Videos are not allowed in Writer\'s Realm. Please attach an image (JPG, PNG, or WEBP) instead.',
+  invalid_image_type: 'Only JPG, PNG, and WEBP images are allowed.',
+  file_too_large: 'The file is too large. Maximum size is 8 MB.',
+  upload_failed: 'The upload failed. Please try again.',
+  invalid_share_kind: 'Please choose a valid share option.',
+  repost_requires_auth: 'Please sign in to repost to your feed.',
+  server_error: 'Something went wrong. Please try again.',
+}
+
+const my = {
+  missing_fields: 'မဖြစ်မနေ ဖြည့်ရမည့် အချက်အလက်များ ဖြည့်ပေးပါ။',
+  invalid_email: 'မှန်ကန်သော အီးမေးလ်လိပ်စာ ထည့်ပေးပါ။',
+  password_short: 'စကားဝှက်သည် အနည်းဆုံး စာလုံး ၆ လုံး ရှိရမည်။',
+  email_exists: 'ဤအီးမေးလ်ဖြင့် အကောင့်တစ်ခု ရှိပြီးဖြစ်ပါသည်။',
+  invalid_credentials: 'အီးမေးလ် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်။',
+  invalid_token: 'သင့်အကောင့် သက်တမ်းကုန်ပြီးဖြစ်ပါသည်။ ထပ်မံဝင်ရောက်ပေးပါ။',
+  unauthorized: 'ဆက်လက်လုပ်ဆောင်ရန် အကောင့်ဝင်ပေးပါ။',
+  forbidden: 'ဤလုပ်ဆောင်ချက်ကို လုပ်ဆောင်ခွင့် မရှိပါ။',
+  not_found: 'မတွေ့ရှိပါ။',
+  post_not_found: 'ဤပို့စ်ကို မတွေ့ရှိပါ။',
+  comment_not_found: 'ဤမှတ်ချက်ကို မတွေ့ရှိပါ။',
+  invalid_category: 'မှန်ကန်သော အမျိုးအစား ရွေးပေးပါ။',
+  title_required: 'ခေါင်းစဉ် ထည့်ပေးရပါမည်။',
+  body_required: 'စာသား အနည်းငယ် ရေးသားပေးပါ။',
+  title_too_long: 'ခေါင်းစဉ် အလျားလွန်နေပါသည် (အမြင့်ဆုံး စာလုံး ၂၀၀)။',
+  body_too_long: 'စာသား အလျားလွန်နေပါသည် (အမြင့်ဆုံး စာလုံး ၂၀,၀၀၀)။',
+  invalid_reaction: 'အသည်း၊ ဟဟ သို့မဟုတ် ငိုတာ တစ်ခုခု ရွေးပေးပါ။',
+  comment_required: 'မှတ်ချက် ရေးသားပေးပါ။',
+  comment_too_long: 'မှတ်ချက် အလျားလွန်နေပါသည် (အမြင့်ဆုံး စာလုံး ၁,၀၀၀)။',
+  video_blocked: 'ကလောင်ကမ္ဘာတွင် ဗီဒီယို တင်ခွင့်မရှိပါ။ ပုံ (JPG, PNG, WEBP) သာ တပ်ဆင်ပေးပါ။',
+  invalid_image_type: 'JPG, PNG, WEBP ပုံများသာ ခွင့်ပြုပါသည်။',
+  file_too_large: 'ဖိုင်အရွယ်အစား ကြီးလွန်းပါသည်။ အမြင့်ဆုံး ၈ MB ဖြစ်ပါသည်။',
+  upload_failed: 'ဖိုင်တင်ရန် မအောင်မြင်ပါ။ ထပ်ကြိုးစားပေးပါ။',
+  invalid_share_kind: 'မှန်ကန်သော မျှဝေမှု ရွေးချယ်ပေးပါ။',
+  repost_requires_auth: 'ဖီးထဲသို့ ပြန်တင်ရန် အကောင့်ဝင်ပေးပါ။',
+  server_error: 'တစ်ခုခု မှားယွင်းနေပါသည်။ ထပ်ကြိုးစားပေးပါ။',
+}
+
+export const messages = { en, my }
+
+export function t(lang, key) {
+  const dictionary = lang === 'my' ? my : en
+  return dictionary[key] ?? en[key] ?? key
+}

@@ -1,0 +1,258 @@
+import Database from 'better-sqlite3'
+import bcrypt from 'bcryptjs'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+export const dataDir = path.join(root, 'data')
+export const dbPath = path.join(dataDir, 'writers-realm.db')
+
+fs.mkdirSync(dataDir, { recursive: true })
+
+export function createDatabase(filename = dbPath) {
+  const db = new Database(filename)
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      pen_name TEXT NOT NULL,
+      bio TEXT NOT NULL DEFAULT '',
+      avatar_url TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category TEXT NOT NULL CHECK (category IN ('poem', 'story', 'general')),
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      image_url TEXT,
+      repost_of INTEGER REFERENCES posts(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      type TEXT NOT NULL CHECK (type IN ('love', 'haha', 'sad')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, post_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS shares (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_posts_category_created ON posts(category, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_reactions_post ON reactions(post_id);
+    CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
+    CREATE INDEX IF NOT EXISTS idx_shares_post ON shares(post_id);
+  `)
+  return db
+}
+
+const seedWriters = [
+  {
+    email: 'kabya-moe@writersrealm.local',
+    authorName: 'ခင်သက်အောင်',
+    penName: 'ကဗျာမိုး',
+    bio: 'ကဗျာဆရာ၊ စာပေဝါသနာအိုး။ မိုးရွာသည့်နေ့တိုင်း စာကြောင်းတစ်ကြောင်း ရေးချင်တတ်သည်။ ရှုမဝစာပေကို ချစ်မက်သူ။',
+  },
+  {
+    email: 'kalone-ni@writersrealm.local',
+    authorName: 'မောင်နိုင်ဦး',
+    penName: 'ကလောင်နီ',
+    bio: 'ဝတ္ထုတိုဆရာ။ မြို့ငယ်လေးတစ်ခုက လူတွေရဲ့ ဇာတ်လမ်းလေးတွေကို စုဆောင်းပြီး စာအဖြစ် ပြန်ရေးတတ်သူ။ လက်ဖက်ရည်တစ်ခွက်နဲ့ စာရေးရတာ ပိုအားရှိသည်။',
+  },
+]
+
+const seedPosts = [
+  {
+    user: 1,
+    category: 'poem',
+    title: 'မိုးရွာသောနေ့',
+    body: `မိုးက တံခါးခေါက်လာတယ်
+တိတ်တိတ်လေးနဲ့ မိုးမကြိုတင်ဘဲ
+
+ခေါင်းအုံးပေါ်က စာအုပ်လေးကို
+မိုးက လက်နဲ့ထိလိုက်သလို
+စာမျက်နှာတွေ စိုစွတ်လာတယ်
+
+စာကြောင်းတွေကလည်း ရေမခံဘဲ
+အသံတိတ်ရာကနေ စီးဆင်းလာတယ်
+
+ငါတို့ မမြင်ရတဲ့ ကောင်းကင်က
+ဒီနေ့ စာရေးသူတစ်ယောက် ဖြစ်သွားတယ်`,
+    age: '5 hours',
+  },
+  {
+    user: 2,
+    category: 'story',
+    title: 'မီးထွန်းထားသော ဆိုင်ငယ်',
+    body: `လမ်းထောင့်က လက်ဖက်ရည်ဆိုင်လေးက ည ၁၁ နာရီအထိ မီးထွန်းထားတတ်တယ်။ ဆိုင်ရှင်အမေက မီးခြစ်ဆံလေးကို တစ်ချက်တိုက်လိုက်တိုင်း မြို့က နည်းနည်း ပိုနွေးလာသလို ခံစားရတယ်။
+
+တစ်နေ့ မိုးသည်းနေတဲ့ ညတစ်ခုမှာ ကျောင်းသားလေးတစ်ယောက် ရေစိုနဲ့ ဝင်လာတယ်။ ပိုက်ဆံမရှိလို့ လက်ဖက်ရည်မမှာနိုင်ပေမယ့် စာအုပ်တစ်အုပ် ကျန်နေခဲ့တယ်။ စာအုပ်ထဲမှာ "မိုးရပ်ရင် ပြန်လာပါမယ်" လို့ ရေးထားတဲ့ စာကြောင်းလေး ပါတယ်။
+
+အမေက စာအုပ်ကို မီးခိုးရောင်ထဲ ထားပြီး နောက်တစ်နေ့အတွက် လက်ဖက်ရည်တစ်ခွက် ကြိုတင်ထားလိုက်တယ်။
+
+မိုးရပ်တဲ့နေ့မှာ ကျောင်းသားလေး ပြန်လာတယ်။ ဒီတစ်ခေါက်တော့ စာအုပ်အသစ်တစ်အုပ်ပါ ယူလာတယ်။ ဆိုင်လေးထဲမှာ စာအုပ်နှစ်အုပ်နဲ့ လက်ဖက်ရည်နှစ်ခွက် ရှိနေတယ်။
+
+အချို့အရာတွေက ပြန်လာတတ်တယ်။ မီးလေးထွန်းထားရင် ပိုလွယ်တယ်။`,
+    age: '1 day',
+  },
+  {
+    user: 1,
+    category: 'poem',
+    title: 'စာကြောင်းတစ်ကြောင်း',
+    body: `မနက်က ရေးခဲ့တဲ့ စာကြောင်းတစ်ကြောင်းက
+ညနေရောက်တော့ တခြားအဓိပ္ပာယ် ရသွားတယ်
+
+စာလုံးတွေက မပြောင်းပေမယ့်
+ဖတ်တဲ့သူ့မျက်လုံးက ပြောင်းသွားတာကြောင့်
+
+ဒါကြောင့် စာရေးသူတစ်ယောက်ဟာ
+မှန်တာကို ရေးတာထက်
+ရိုးသားတာကို ရေးတတ်ဖို့ လိုတယ်`,
+    age: '2 days',
+  },
+  {
+    user: 2,
+    category: 'general',
+    title: 'စာရေးသူတစ်ယောက်ရဲ့ မနက်ခင်း',
+    body: `မနက် ၅ နာရီခွဲ။ မီးဖွင့်လိုက်တာနဲ့ စာရေးစားပွဲပေါ်က ဖုန်လေးတွေကို မြင်လိုက်ရတယ်။ မနေ့က ရေးလို့မပြီးခဲ့တဲ့ ဇာတ်လမ်းက စာမျက်နှာထဲမှာ တစ်ဝက်လောက် အိပ်ပျော်နေတယ်။
+
+လက်ဖက်ရည်တစ်ခွက်၊ တိတ်ဆိတ်မှုတစ်ခု၊ ပြီးတော့ ကီးဘုတ်လေးက အသံစတယ်။ စာရေးတာဆိုတာ ကြီးကျယ်တဲ့အရာ မဟုတ်ဘဲ မမြင်ရတဲ့အရာကို မြင်အောင် လုပ်ပြတာလို့ ဒီမနက်မှာ ထင်လိုက်မိတယ်။
+
+ဒီနေ့လည်း စာကြောင်းလေးတစ်ကြောင်း ရေးဖြစ်ပါစေ။ ✍️`,
+    age: '3 days',
+  },
+  {
+    user: 2,
+    category: 'story',
+    title: 'လမ်းထောင့်က စာအုပ်ဆိုင်',
+    body: `ဆိုင်ငယ်လေးကို အမေက "စာအိမ်" လို့ ခေါ်တယ်။ စာအုပ်တွေကို အိမ်သားတွေလို သဘောထားလို့။ နေ့တိုင်း မနက်ဖွင့်ရင် အမေက စာအုပ်တွေကို နေရာချပေးရင်း မေတ္တာနဲ့ ပြောတတ်တယ် — "မင်းတို့ ဒီနေ့ ဖတ်ခံရမယ်နော်။"
+
+ကလေးတစ်ယောက် စာအုပ်ကို လက်နဲ့ကိုင်ရင်း မျက်နှာပြောင်းသွားတာကို အမေက ဘယ်တုန်းကမှ မမေ့ခဲ့ဘူး။ စာအုပ်က ဈေးပေါပေမယ့် ကလေး့်အတွက်တော့ ကမ္ဘာတစ်ခုလုံး ဖြစ်သွားတယ်။
+
+ညနေမှာ ဆိုင်ပိတ်ချိန်ရောက်ရင် အမေက စာအုပ်တွေကို ပြန်လှမ်းကြည့်ရင်း ပြုံးတတ်တယ်။ ဒီနေ့ ဘယ်သူ့ကို ကမ္ဘာပိုပေးနိုင်ခဲ့လဲဆိုတာ သိနေလို့။`,
+    age: '4 days',
+  },
+  {
+    user: 1,
+    category: 'poem',
+    title: 'မီးအိမ်လေး',
+    body: `အိမ်ငယ်လေးထဲမှာ
+မီးအိမ်က တစ်လုံးတည်း အလိုက်ပေးတယ်
+
+မင်းပြောခဲ့တဲ့ စကားလုံးတွေက
+မီးရောင်ထဲမှာ အရိပ်ဖြစ်လာပြီး
+နံရံပေါ်မှာ ကခုန်နေတယ်
+
+ငါတို့ မပြောဖြစ်ခဲ့တာတွေကတော့
+မီးမရောက်တဲ့ ထောင့်လေးထဲမှာ
+တိတ်တိတ်လေး စောင့်နေကြတယ်
+
+ဒီည မီးကို နည်းနည်းပိုမီးစေချင်တယ်`,
+    age: '5 days',
+  },
+  {
+    user: 1,
+    category: 'general',
+    title: 'ကလောင်နဲ့ မိုးကြိုး',
+    body: `စာရေးဖို့ မိုးကြိုးက မလိုအပ်ပေမယ့် တစ်ခါတလေ အားတက်စေတယ်။ ကောင်းကင်က တစ်ချက်လက်ခုပ်လိုက်တာနဲ့ စာကြောင်းတွေက လိုက်ထွက်လာတတ်တယ်။
+
+ဒီနေ့ ကလောင်လေး ထက်မြက်နေပါစေ။ မိုးကြိုးကတော့ ဖြစ်ချင်မှ ဖြစ်တာဆိုတော့... စာကြောင်းကို ကိုယ်တိုင် ရေးကြရအောင်။`,
+    age: '6 days',
+  },
+]
+
+const seedComments = [
+  { post: 1, user: 2, body: 'မိုးရွာတဲ့နေ့နဲ့ စာကြောင်းက အရမ်းလိုက်ဖက်တယ်။ ဖတ်ရင်း ငါ့မနက်ခင်းကို ပြန်မြင်လိုက်မိတယ်။' },
+  { post: 1, user: 1, body: 'ကျေးဇူးတင်ပါတယ်နော်။ မိုးက စာရေးခိုင်းနေတာပါ။' },
+  { post: 2, user: 1, body: 'ဆိုင်ငယ်လေးက စာထဲမှာ အရမ်းအသက်ဝင်နေတယ်။ မီးခြစ်ဆံလေးကို မြင်လိုက်ရသလိုပဲ။' },
+  { post: 3, user: 2, body: '"ရိုးသားတာကို ရေးတတ်ဖို့" ဆိုတဲ့ စာကြောင်းကို သိမ်းထားလိုက်မယ်။' },
+  { post: 5, user: 1, body: 'စာအိမ်ဆိုတဲ့ အခေါ်အဝေါ်လေး အရမ်းလှတယ်။' },
+]
+
+function ago(age) {
+  const [, amount, unit] = age.match(/^(\d+) (hour|day)s?$/) || []
+  const ms = unit === 'hour' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000
+  return new Date(Date.now() - Number(amount || 1) * ms).toISOString().replace('T', ' ').slice(0, 19)
+}
+
+export function seedDatabase(db) {
+  const existing = db.prepare('SELECT COUNT(*) AS count FROM users').get().count
+  if (existing > 0) return false
+
+  const insertUser = db.prepare(`
+    INSERT INTO users (email, password_hash, author_name, pen_name, bio, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `)
+  const insertPost = db.prepare(`
+    INSERT INTO posts (user_id, category, title, body, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `)
+  const insertReaction = db.prepare(`
+    INSERT OR REPLACE INTO reactions (user_id, post_id, type, created_at) VALUES (?, ?, ?, ?)
+  `)
+  const insertComment = db.prepare(`
+    INSERT INTO comments (post_id, user_id, body, created_at) VALUES (?, ?, ?, ?)
+  `)
+  const insertShare = db.prepare(`
+    INSERT INTO shares (post_id, user_id, created_at) VALUES (?, NULL, ?)
+  `)
+
+  const seed = db.transaction(() => {
+    const passwordHash = bcrypt.hashSync('writer123', 10)
+    const created = ago('6 days')
+    const userIds = seedWriters.map((writer) =>
+      Number(insertUser.run(writer.email, passwordHash, writer.authorName, writer.penName, writer.bio, created).lastInsertRowid),
+    )
+    const postIds = seedPosts.map((post) =>
+      Number(insertPost.run(userIds[post.user - 1], post.category, post.title, post.body, ago(post.age)).lastInsertRowid),
+    )
+
+    const reactionPlan = [
+      [0, 'love'], [0, 'haha'], [1, 'sad'], [2, 'love'], [2, 'haha'], [3, 'sad'],
+      [4, 'love'], [4, 'haha'], [5, 'love'], [6, 'haha'],
+    ]
+    reactionPlan.forEach(([postIndex, type], index) => {
+      const reactor = userIds[index % 2]
+      if (postIds[postIndex] && reactor !== undefined) {
+        insertReaction.run(reactor, postIds[postIndex], type, ago('1 hour'))
+      }
+    })
+
+    seedComments.forEach((comment, index) => {
+      insertComment.run(postIds[comment.post - 1], userIds[comment.user - 1], comment.body, ago('2 hours'))
+    })
+    insertShare.run(postIds[0], ago('1 hour'))
+    insertShare.run(postIds[1], ago('1 hour'))
+    insertShare.run(postIds[4], ago('1 hour'))
+  })
+
+  seed()
+  return true
+}
+
+export const db = createDatabase(process.env.WRITERS_REALM_DB || dbPath)
+seedDatabase(db)
