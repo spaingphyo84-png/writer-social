@@ -1,7 +1,6 @@
-node_modules/
+﻿node_modules/
 dist/
-data/
-uploads/
 .env
-.DS_Store
-*.log
+*.db
+*.db-wal
+*.db-shm
