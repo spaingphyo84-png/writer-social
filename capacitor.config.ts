@@ -1,4 +1,4 @@
-import type { CapacitorConfig } from '@capacitor/cli'
+﻿import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.writersrealm.app',
@@ -6,8 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     url: 'https://onrender.com',
-    cleartext: true,
-  },
-}
+    cleartext: true
+  }
+};
 
-export default config
+export default config;
