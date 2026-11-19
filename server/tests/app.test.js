@@ -43,6 +43,22 @@ test('health check responds', async () => {
   assert.equal(data.status, 'ok')
 })
 
+test('CORS allows Capacitor, local web and OnRender origins', async () => {
+  const allowed = [
+    'capacitor://localhost',
+    'http://localhost',
+    'https://localhost',
+    'http://localhost:5173',
+    'https://writer-social.onrender.com',
+  ]
+  for (const origin of allowed) {
+    const response = await fetch(`${base}/api/health`, { headers: { Origin: origin } })
+    assert.equal(response.headers.get('access-control-allow-origin'), origin)
+  }
+  const blocked = await fetch(`${base}/api/health`, { headers: { Origin: 'https://evil.example.com' } })
+  assert.equal(blocked.headers.get('access-control-allow-origin'), null)
+})
+
 test('seed data includes writers, poems and short stories', async () => {
   const { data } = await api('/api/posts?limit=100')
   assert.ok(data.posts.length >= 7)

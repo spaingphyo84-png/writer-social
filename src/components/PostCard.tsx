@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Copy, Link2, MessageCircle, MoreHorizontal, Repeat2, Share2, Trash2 } from 'lucide-react'
 import { api } from '../api'
+import { appOrigin, resolveAppUrl } from '../config'
 import { useAuth } from '../context/AuthContext'
 import { useLocale } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
@@ -59,7 +60,7 @@ export default function PostCard({ post, onDeleted, onRepost }: PostCardProps) {
   async function copyLink() {
     setShareOpen(false)
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/?post=${post.id}`)
+      await navigator.clipboard.writeText(`${appOrigin()}/?post=${post.id}`)
       toast(t('post.linkCopied'))
     } catch {
       toast(t('common.error'), 'error')
@@ -152,7 +153,7 @@ export default function PostCard({ post, onDeleted, onRepost }: PostCardProps) {
 
         {post.imageUrl && (
           <div className="mt-4 overflow-hidden rounded-xl border border-parchment-200 dark:border-ink-800">
-            <img src={post.imageUrl} alt={t('post.imageAlt')} className="max-h-[420px] w-full object-cover" loading="lazy" />
+            <img src={resolveAppUrl(post.imageUrl)} alt={t('post.imageAlt')} className="max-h-[420px] w-full object-cover" loading="lazy" />
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera, Loader2 } from 'lucide-react'
+import { resolveAppUrl } from '../config'
 import { useAuth } from '../context/AuthContext'
 import { useLocale } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
@@ -68,7 +69,7 @@ export default function EditProfileModal() {
         <div className="flex items-center gap-4">
           <button type="button" onClick={() => fileInput.current?.click()} className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-parchment-300 bg-parchment-100 text-ink-700/50 transition hover:border-terracotta-500 dark:border-ink-700 dark:bg-ink-800">
             {preview || user?.avatarUrl
-              ? <img src={preview ?? user?.avatarUrl ?? ''} alt={t('profile.avatar')} className="h-full w-full object-cover" />
+              ? <img src={resolveAppUrl(preview ?? user?.avatarUrl ?? '')} alt={t('profile.avatar')} className="h-full w-full object-cover" />
               : <Camera className="h-5 w-5" />}
           </button>
           <div>

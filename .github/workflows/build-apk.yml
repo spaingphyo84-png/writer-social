@@ -27,13 +27,14 @@ jobs:
           npm install
           npm run build
 
-      - name: Generate fresh Android project and verify server URL
+      - name: Generate fresh Android project
         run: |
           rm -rf android
           npx cap add android
           npx cap sync android
           cat android/app/src/main/assets/capacitor.config.json
-          grep -q "://onrender.com" android/app/src/main/assets/capacitor.config.json
+          grep -q "com.writersrealm.app.v4" android/app/src/main/assets/capacitor.config.json
+          ! grep -q '"server"' android/app/src/main/assets/capacitor.config.json
 
       - name: Build Debug APK
         run: |
@@ -44,5 +45,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v5
         with:
-          name: writers-realm-v3
+          name: writers-realm-v4
           path: android/app/build/outputs/apk/debug/app-debug.apk

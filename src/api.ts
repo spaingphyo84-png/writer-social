@@ -1,3 +1,4 @@
+import { resolveAppUrl } from './config'
 import type { AuthResponse, Comment, Post, Trend, User, Writer } from './types'
 
 export const TOKEN_KEY = 'writers-realm-token'
@@ -35,7 +36,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(`/api${path}`, { ...options, headers })
+  const response = await fetch(resolveAppUrl(`/api${path}`), { ...options, headers })
   let payload: unknown = null
   try {
     payload = await response.json()

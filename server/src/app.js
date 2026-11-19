@@ -13,10 +13,34 @@ import { t } from './messages.js'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const distDir = path.join(root, 'dist')
 
+const capacitorOrigins = new Set([
+  'capacitor://localhost',
+  'http://localhost',
+  'https://localhost',
+])
+const localOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
+const onRenderOriginPattern = /^https:\/\/([a-z0-9-]+\.)*onrender\.com$/
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (
+      !origin ||
+      capacitorOrigins.has(origin) ||
+      localOriginPattern.test(origin) ||
+      onRenderOriginPattern.test(origin)
+    ) {
+      return callback(null, true)
+    }
+    return callback(null, false)
+  },
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language'],
+}
+
 export function createApp() {
   const app = express()
   app.disable('x-powered-by')
-  app.use(cors())
+  app.use(cors(corsOptions))
   app.use(express.json({ limit: '100kb' }))
   app.use(express.urlencoded({ extended: true, limit: '100kb' }))
 

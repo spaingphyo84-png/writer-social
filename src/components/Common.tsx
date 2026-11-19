@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { BookOpen, Feather, Layers3, Loader2, Sparkles, X } from 'lucide-react'
+import { resolveAppUrl } from '../config'
 import { useLocale } from '../context/SettingsContext'
 import type { Category } from '../i18n'
 import { initials } from '../utils'
@@ -21,7 +22,7 @@ const gradients = [
 
 export function Avatar({ name, url, size = 'md' }: { name: string; url?: string | null; size?: keyof typeof avatarSizes }) {
   if (url) {
-    return <img src={url} alt={name} className={`${avatarSizes[size]} shrink-0 rounded-full object-cover ring-2 ring-parchment-200 dark:ring-ink-700`} />
+    return <img src={resolveAppUrl(url)} alt={name} className={`${avatarSizes[size]} shrink-0 rounded-full object-cover ring-2 ring-parchment-200 dark:ring-ink-700`} />
   }
   const color = gradients[(Array.from(name)[0]?.codePointAt(0) ?? 0) % gradients.length]
   return (
