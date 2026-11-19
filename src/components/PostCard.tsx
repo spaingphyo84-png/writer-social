@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, Link2, MessageCircle, MoreHorizontal, Repeat2, Share2, Trash2 } from 'lucide-react'
+import { Copy, Link2, MessageCircle, MoreHorizontal, Pencil, Repeat2, Share2, Trash2 } from 'lucide-react'
 import { api } from '../api'
 import { appOrigin, resolveAppUrl } from '../config'
 import { useAuth } from '../context/AuthContext'
@@ -10,6 +10,7 @@ import type { Post } from '../types'
 import { timeAgo } from '../utils'
 import { Avatar, CategoryTag, PenBadge } from './Common'
 import Comments from './Comments'
+import EditPostModal from './EditPostModal'
 
 const reactions: { key: ReactionType; emoji: string; label: 'reaction.love' | 'reaction.haha' | 'reaction.sad'; active: string }[] = [
   { key: 'love', emoji: '❤️', label: 'reaction.love', active: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-500/30' },
@@ -20,10 +21,11 @@ const reactions: { key: ReactionType; emoji: string; label: 'reaction.love' | 'r
 interface PostCardProps {
   post: Post
   onDeleted: (id: number) => void
+  onUpdated: (post: Post) => void
   onRepost: (post: Post) => void
 }
 
-export default function PostCard({ post, onDeleted, onRepost }: PostCardProps) {
+export default function PostCard({ post, onDeleted, onUpdated, onRepost }: PostCardProps) {
   const { t } = useLocale()
   const { user, openAuth } = useAuth()
   const { toast } = useToast()
@@ -34,6 +36,7 @@ export default function PostCard({ post, onDeleted, onRepost }: PostCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
 
   useEffect(() => setCounts(post.counts), [post.counts])
   useEffect(() => setViewerReaction(post.viewerReaction), [post.viewerReaction])
@@ -127,6 +130,9 @@ export default function PostCard({ post, onDeleted, onRepost }: PostCardProps) {
                   <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
                   {isOwner && (
                     <div className="card absolute right-0 z-20 mt-1 w-44 animate-fade-up p-1.5">
+                      <button type="button" onClick={() => { setMoreOpen(false); setEditOpen(true) }} className="btn-ghost w-full !justify-start !py-2 text-xs">
+                        <Pencil className="h-4 w-4" /> {t('post.edit')}
+                      </button>
                       <button type="button" onClick={remove} className="btn-ghost w-full !justify-start !py-2 text-xs text-red-600 dark:text-red-400">
                         <Trash2 className="h-4 w-4" /> {t('post.delete')}
                       </button>
@@ -215,6 +221,9 @@ export default function PostCard({ post, onDeleted, onRepost }: PostCardProps) {
         <div className="flex items-center gap-1.5 border-t border-parchment-200 px-4 py-2 text-[11px] text-ink-700/45 dark:border-ink-800 dark:text-parchment-200/40 sm:px-5">
           <Link2 className="h-3 w-3" /> {counts.shares} {t('post.share').toLowerCase()}
         </div>
+      )}
+      {isOwner && (
+        <EditPostModal post={post} open={editOpen} onClose={() => setEditOpen(false)} onSaved={onUpdated} />
       )}
     </article>
   )

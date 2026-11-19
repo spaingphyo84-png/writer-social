@@ -57,16 +57,52 @@ export function validateProfile(body, lang = 'en') {
   return { value: { authorName, penName, bio } }
 }
 
+export function normalizeCategory(value) {
+  const category = cleanText(value, 20)
+  return category === 'short_story' || category === 'short-story' ? 'story' : category
+}
+
 export function validatePost(body, lang = 'en') {
-  const category = cleanText(body.category, 20)
+  const category = normalizeCategory(body.category)
   const title = cleanText(body.title, 200)
-  const postBody = cleanText(body.body, 20000)
+  const postBody = cleanText(body.body ?? body.content, 20000)
   if (!CATEGORIES.includes(category)) return { error: t(lang, 'invalid_category') }
   if (!title) return { error: t(lang, 'title_required') }
   if (!postBody) return { error: t(lang, 'body_required') }
   if (String(body.title ?? '').trim().length > 200) return { error: t(lang, 'title_too_long') }
-  if (String(body.body ?? '').trim().length > 20000) return { error: t(lang, 'body_too_long') }
+  if (String(body.body ?? body.content ?? '').trim().length > 20000) return { error: t(lang, 'body_too_long') }
   return { value: { category, title, body: postBody } }
+}
+
+export function validatePostUpdate(body, lang = 'en') {
+  const value = { removeImage: false }
+
+  if (body.category !== undefined) {
+    const category = normalizeCategory(body.category)
+    if (!CATEGORIES.includes(category)) return { error: t(lang, 'invalid_category') }
+    value.category = category
+  }
+
+  if (body.title !== undefined) {
+    const title = cleanText(body.title, 200)
+    if (!title) return { error: t(lang, 'title_required') }
+    if (String(body.title).trim().length > 200) return { error: t(lang, 'title_too_long') }
+    value.title = title
+  }
+
+  if (body.body !== undefined || body.content !== undefined) {
+    const rawBody = body.content ?? body.body
+    const postBody = cleanText(rawBody, 20000)
+    if (!postBody) return { error: t(lang, 'body_required') }
+    if (String(rawBody ?? '').trim().length > 20000) return { error: t(lang, 'body_too_long') }
+    value.body = postBody
+  }
+
+  if (body.removeImage === true || body.removeImage === 'true' || body.removeImage === '1') {
+    value.removeImage = true
+  }
+
+  return { value }
 }
 
 export function validateReaction(body, lang = 'en') {

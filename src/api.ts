@@ -68,6 +68,7 @@ export const api = {
     return apiFetch<{ posts: Post[] }>(`/posts${suffix ? `?${suffix}` : ''}`)
   },
   createPost: (data: FormData) => apiFetch<{ post: Post }>('/posts', { method: 'POST', body: data }),
+  updatePost: (id: number, data: FormData) => apiFetch<{ post: Post }>(`/posts/${id}`, { method: 'PUT', body: data }),
   deletePost: (id: number) => apiFetch<{ success: boolean }>(`/posts/${id}`, { method: 'DELETE' }),
   react: (id: number, type: string) => apiFetch<{ counts: Post['counts'] }>(`/posts/${id}/react`, {
     method: 'POST', body: JSON.stringify({ type }),

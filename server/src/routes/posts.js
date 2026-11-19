@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { db } from '../db.js'
 import { requireAuth, optionalAuth } from '../auth.js'
 import {
-  validatePost, validateReaction, validateComment,
+  validatePost, validatePostUpdate, validateReaction, validateComment,
   CATEGORIES, langFromRequest,
 } from '../validation.js'
 import { t } from '../messages.js'
@@ -128,6 +128,36 @@ router.post('/', requireAuth, uploadPostImage, (req, res) => {
   `).run(req.user.id, category, title, postBody, imageUrl)
   res.status(201).json({ post: getPost(Number(info.lastInsertRowid), req.user.id) })
 })
+
+const updatePost = (req, res) => {
+  const lang = langFromRequest(req)
+  const id = validId(req.params.id)
+  const post = id ? db.prepare('SELECT * FROM posts WHERE id = ?').get(id) : null
+  if (!post) return res.status(404).json({ error: t(lang, 'post_not_found') })
+  if (post.user_id !== req.user.id) return res.status(403).json({ error: t(lang, 'forbidden') })
+
+  const result = validatePostUpdate(req.body, lang)
+  if (result.error) return res.status(400).json({ error: result.error })
+
+  const { title, body: postBody, category, removeImage } = result.value
+  const columns = []
+  const params = []
+  if (title !== undefined) { columns.push('title = ?'); params.push(title) }
+  if (postBody !== undefined) { columns.push('body = ?'); params.push(postBody) }
+  if (category !== undefined) { columns.push('category = ?'); params.push(category) }
+  if (req.file || removeImage) {
+    columns.push('image_url = ?')
+    params.push(req.file ? saveUpload(req.file) : null)
+  }
+
+  if (columns.length) {
+    db.prepare(`UPDATE posts SET ${columns.join(', ')} WHERE id = ?`).run(...params, id)
+  }
+  res.json({ post: getPost(id, req.user.id) })
+}
+
+router.put('/:id', requireAuth, uploadPostImage, updatePost)
+router.patch('/:id', requireAuth, uploadPostImage, updatePost)
 
 router.delete('/:id', requireAuth, (req, res) => {
   const lang = langFromRequest(req)

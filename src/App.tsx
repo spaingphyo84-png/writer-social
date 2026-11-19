@@ -96,6 +96,12 @@ export default function App() {
     setPosts((current) => [post, ...current])
   }
 
+  function handleUpdated(post: Post) {
+    setPosts((current) => current.map((item) => (item.id === post.id ? post : item)))
+    if (filter !== 'all' && post.category !== filter) setFilter('all')
+    api.trending().then((result) => setTrends(result.trending)).catch(() => undefined)
+  }
+
   const selectedWriter = writers.find((writer) => writer.id === authorFilter)
 
   return (
@@ -183,6 +189,7 @@ export default function App() {
                   key={post.id}
                   post={post}
                   onDeleted={(id) => setPosts((current) => current.filter((item) => item.id !== id))}
+                  onUpdated={handleUpdated}
                   onRepost={(repost) => setPosts((current) => [repost, ...current])}
                 />
               ))}

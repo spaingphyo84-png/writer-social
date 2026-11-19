@@ -51,6 +51,7 @@ writer-social/
 │       ├── Comments.tsx
 │       ├── AuthModal.tsx
 │       ├── EditProfileModal.tsx
+│       ├── EditPostModal.tsx
 │       ├── Toast.tsx
 │       └── Icons.tsx (re-exports lucide-react icons)
 └── uploads/                     # Local file storage (images only, gitignored)
@@ -136,6 +137,7 @@ Indexes are created on `posts(category, created_at)`, `reactions(post_id)`, `com
 | GET | `/api/posts?category=&limit=` | no | Feed, newest first, with author, reaction counts, viewer reaction, comment/share counts |
 | GET | `/api/posts/:id` | no | Single post |
 | POST | `/api/posts` | yes | Create post (multipart: category, title, body, image) |
+| PUT / PATCH | `/api/posts/:id` | yes (owner) | Update title, content/body, category (`poem`/`story`/`general`, `short_story` alias), and optionally replace (`image`) or remove (`removeImage=true`) the image; returns updated post |
 | DELETE | `/api/posts/:id` | yes (owner) | Delete post |
 | POST | `/api/posts/:id/react` | yes | `{ type: 'love'|'haha'|'sad' }` toggle/switch |
 | GET | `/api/posts/:id/comments` | no | Comments list |
@@ -144,7 +146,7 @@ Indexes are created on `posts(category, created_at)`, `reactions(post_id)`, `com
 | POST | `/api/posts/:id/share` | optional | `{ kind: 'repost'|'link' }`; repost requires auth, link share works anonymously |
 | GET | `/api/health` | no | Health check |
 
-All errors return `{ error: string }`; validation errors include a `message` in the active language supplied via `Accept-Language` (`en`/`my`) header.
+All errors return `{ error: string }`; validation errors include a `message` in the active language supplied via `Accept-Language` (`en`/`my`) header. Owner-only post edits/deletes return `403` when the authenticated user is not the author.
 
 ---
 
@@ -176,13 +178,18 @@ All errors return `{ error: string }`; validation errors include a `message` in 
 - Comments visible/expandable on all post types; owner can delete own comments.
 - Share: "Repost to Feed" (creates a repost entry in the feed) and "Copy Post Link" (clipboard + toast).
 
-### 4.6 Seed Data
+### 4.6 Post Ownership
+- Post cards owned by the signed-in writer show Edit and Delete in the overflow menu, both localized (`Edit` / `ပြင်ဆင်ရန်`).
+- Edit opens a pre-filled modal with title, category, content, and optional image replace/remove; saving calls `PUT /api/posts/:id` with FormData and replaces that post in the feed immediately without a reload.
+- Changing to a category outside the active feed filter resets the feed to All so the updated post stays visible.
+
+### 4.7 Seed Data
 - Two sample Myanmar writers with pen names, bios, and avatars (initials-based placeholder).
 - Multiple sample poems (ကဗျာ) and short stories (ဝတ္ထုတို) in Burmese plus a few general posts.
 - Seed reactions and comments so counters and threads look alive on first launch.
 - Demo login (also available as a one-click button in the sign-in modal): `kabya-moe@writersrealm.local` / `writer123` (second writer: `kalone-ni@writersrealm.local` / `writer123`).
 
-### 4.7 Verification
+### 4.8 Verification
 - `npm run build` (TypeScript + Vite) must pass with zero errors.
 - `npm test` (node:test backend suite) must pass.
 - Startup instructions documented in this file (see §6).

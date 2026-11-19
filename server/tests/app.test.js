@@ -194,3 +194,65 @@ test('image post, reactions, comments and share flows work', async () => {
 
   fs.rmSync(path.join(uploadsDir, path.basename(post.imageUrl)), { force: true })
 })
+
+test('authors can edit their own posts and remove images', async () => {
+  const loginAs = async (email) => (await api('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'writer123' }),
+  })).data.token
+
+  const ownerToken = await loginAs('kabya-moe@writersrealm.local')
+  const otherToken = await loginAs('kalone-ni@writersrealm.local')
+
+  const form = new FormData()
+  form.set('category', 'poem')
+  form.set('title', 'Before editing')
+  form.set('body', 'Original lines')
+  form.set('image', new Blob([PNG], { type: 'image/png' }), 'edit-before.png')
+  const created = await api('/api/posts', auth(ownerToken, { method: 'POST', body: form }))
+  assert.equal(created.status, 201)
+  const post = created.data.post
+  const originalImage = post.imageUrl
+
+  const forbidden = await api(`/api/posts/${post.id}`, auth(otherToken, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Stolen' }),
+  }))
+  assert.equal(forbidden.status, 403)
+
+  const updated = await api(`/api/posts/${post.id}`, auth(ownerToken, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'After editing', content: 'Revised lines', category: 'short_story' }),
+  }))
+  assert.equal(updated.status, 200)
+  assert.equal(updated.data.post.title, 'After editing')
+  assert.equal(updated.data.post.body, 'Revised lines')
+  assert.equal(updated.data.post.category, 'story')
+  assert.equal(updated.data.post.imageUrl, originalImage)
+
+  const invalid = await api(`/api/posts/${post.id}`, auth(ownerToken, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: '   ' }),
+  }))
+  assert.equal(invalid.status, 400)
+
+  const removal = new FormData()
+  removal.set('removeImage', 'true')
+  const removed = await api(`/api/posts/${post.id}`, auth(ownerToken, {
+    method: 'PATCH',
+    body: removal,
+  }))
+  assert.equal(removed.status, 200)
+  assert.equal(removed.data.post.imageUrl, null)
+  assert.equal(removed.data.post.title, 'After editing')
+
+  const fetched = await api(`/api/posts/${post.id}`)
+  assert.equal(fetched.data.post.category, 'story')
+  assert.equal(fetched.data.post.body, 'Revised lines')
+
+  fs.rmSync(path.join(uploadsDir, path.basename(originalImage)), { force: true })
+})
