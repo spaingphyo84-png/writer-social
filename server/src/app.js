@@ -67,8 +67,8 @@ export function createApp() {
     strictTransportSecurity: { maxAge: 15552000, includeSubDomains: true },
   }))
   app.use(cors(corsOptions))
-  app.use(express.json({ limit: '100kb' }))
-  app.use(express.urlencoded({ extended: true, limit: '100kb' }))
+  app.use(express.json({ limit: '50kb' }))
+  app.use(express.urlencoded({ extended: true, limit: '50kb' }))
 
   app.use('/uploads', express.static(uploadsDir, {
     setHeaders(res) {

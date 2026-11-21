@@ -3,7 +3,20 @@ import { t } from './messages.js'
 
 const buckets = new Map()
 
-const HOUR = 60 * 60 * 1000
+const MINUTE = 60 * 1000
+const HOUR = 60 * MINUTE
+const PRUNE_INTERVAL_MS = MINUTE
+const MAX_BUCKETS = 10000
+let lastPrune = Date.now()
+
+function prune(now) {
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key)
+  }
+  while (buckets.size > MAX_BUCKETS) {
+    buckets.delete(buckets.keys().next().value)
+  }
+}
 
 export function clientIp(req) {
   return req.ip || req.socket?.remoteAddress || 'unknown'
@@ -11,11 +24,16 @@ export function clientIp(req) {
 
 export function createRateLimit({ prefix, max, windowMs, key = clientIp }) {
   return (req, res, next) => {
+    const now = Date.now()
+    if (now - lastPrune >= PRUNE_INTERVAL_MS || buckets.size >= MAX_BUCKETS) {
+      prune(now)
+      lastPrune = now
+    }
+
     const identifier = key(req)
     if (!identifier) return next()
 
     const bucketKey = `${prefix}:${identifier}`
-    const now = Date.now()
     let bucket = buckets.get(bucketKey)
     if (!bucket || now >= bucket.resetAt) {
       bucket = { count: 0, resetAt: now + windowMs }
@@ -41,10 +59,16 @@ export const registerRateLimit = createRateLimit({
   windowMs: HOUR,
 })
 
+export const loginRateLimit = createRateLimit({
+  prefix: 'login',
+  max: 10,
+  windowMs: 15 * MINUTE,
+})
+
 export const createPostRateLimit = createRateLimit({
   prefix: 'posts',
   max: 3,
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * MINUTE,
   key: (req) => `${clientIp(req)}:${req.user?.id ?? 'anonymous'}`,
 })
 

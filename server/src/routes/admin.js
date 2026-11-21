@@ -2,11 +2,38 @@ import { Router } from 'express'
 import { db } from '../db.js'
 import { requireAuth, requireAdmin, PUBLIC_USER_COLUMNS } from '../auth.js'
 import { containsSpam, isGibberishName } from '../spam.js'
+import { isRegistrationOpen, setRegistrationOpen } from '../lockdown.js'
+import { langFromRequest } from '../validation.js'
+import { t } from '../messages.js'
 import { deleteUser } from './users.js'
 
 const router = Router()
 
 router.delete('/users/:id', requireAuth, requireAdmin, deleteUser)
+
+router.get('/registration-status', requireAuth, requireAdmin, (_req, res) => {
+  res.json({ registrationOpen: isRegistrationOpen() })
+})
+
+router.get('/lockdown', requireAuth, requireAdmin, (_req, res) => {
+  res.json({ registrationOpen: isRegistrationOpen() })
+})
+
+router.post('/lockdown', requireAuth, requireAdmin, (req, res) => {
+  const body = req.body ?? {}
+  let nextState
+  if (typeof body.registrationOpen === 'boolean') nextState = body.registrationOpen
+  else if (typeof body.open === 'boolean') nextState = body.open
+  else if (typeof body.locked === 'boolean') nextState = !body.locked
+  else if (typeof body.paused === 'boolean') nextState = !body.paused
+
+  if (nextState === undefined) {
+    return res.status(400).json({ error: t(langFromRequest(req), 'missing_fields') })
+  }
+
+  const registrationOpen = setRegistrationOpen(nextState)
+  res.json({ success: true, registrationOpen })
+})
 
 router.delete('/spam', requireAuth, requireAdmin, async (req, res) => {
   const posts = await db.prepare('SELECT id, user_id, title, body FROM posts').all()

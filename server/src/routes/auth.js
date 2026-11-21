@@ -3,15 +3,17 @@ import { db } from '../db.js'
 import { hashPassword, comparePassword, signToken, publicUser, requireAuth, PUBLIC_USER_COLUMNS } from '../auth.js'
 import { validateRegister, langFromRequest } from '../validation.js'
 import { t } from '../messages.js'
-import { uploadAvatar, saveUpload } from '../upload.js'
-import { registerRateLimit } from '../rateLimit.js'
+import { requireValidImageBuffer, uploadAvatar, saveUpload } from '../upload.js'
+import { loginRateLimit, registerRateLimit } from '../rateLimit.js'
 import { issueCaptcha, requireCaptcha } from '../captcha.js'
+import { isRegistrationOpen, requireRegistrationOpen } from '../lockdown.js'
 
 const router = Router()
 
 router.get('/captcha', (_req, res) => res.json(issueCaptcha()))
+router.get('/status', (_req, res) => res.json({ registrationOpen: isRegistrationOpen() }))
 
-router.post('/register', registerRateLimit, uploadAvatar, requireCaptcha, async (req, res) => {
+router.post('/register', requireRegistrationOpen, registerRateLimit, uploadAvatar, requireValidImageBuffer, requireCaptcha, async (req, res) => {
   const lang = langFromRequest(req)
   const result = validateRegister(req.body, lang)
   if (result.error) return res.status(400).json({ error: result.error })
@@ -36,7 +38,7 @@ router.post('/register', registerRateLimit, uploadAvatar, requireCaptcha, async 
   }
 })
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimit, async (req, res) => {
   const lang = langFromRequest(req)
   const email = String(req.body?.email ?? '').trim().toLowerCase()
   const password = String(req.body?.password ?? '')

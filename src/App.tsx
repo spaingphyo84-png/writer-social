@@ -44,12 +44,15 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [feedVersion, setFeedVersion] = useState(0)
   const [cleaningSpam, setCleaningSpam] = useState(false)
+  const [togglingLockdown, setTogglingLockdown] = useState(false)
+  const [registrationOpen, setRegistrationOpen] = useState(true)
   const [focusSignal, setFocusSignal] = useState(0)
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     api.featuredWriters().then((result) => setWriters(result.writers)).catch(() => undefined)
     api.trending().then((result) => setTrends(result.trending)).catch(() => undefined)
+    api.registrationStatus().then((result) => setRegistrationOpen(result.registrationOpen)).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -104,6 +107,19 @@ export default function App() {
     api.trending().then((result) => setTrends(result.trending)).catch(() => undefined)
   }
 
+  async function toggleLockdown() {
+    setTogglingLockdown(true)
+    try {
+      const result = await api.lockdown(!registrationOpen)
+      setRegistrationOpen(result.registrationOpen)
+      toast(t(result.registrationOpen ? 'admin.registrationResumed' : 'admin.registrationPaused'))
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('common.error'), 'error')
+    } finally {
+      setTogglingLockdown(false)
+    }
+  }
+
   async function cleanSpam() {
     setCleaningSpam(true)
     try {
@@ -123,7 +139,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <Header search={search} onSearchChange={setSearch} onWrite={() => setFocusSignal((value) => value + 1)} />
+      <Header
+        search={search}
+        onSearchChange={setSearch}
+        onWrite={() => setFocusSignal((value) => value + 1)}
+        registrationOpen={registrationOpen}
+        onToggleRegistration={user?.isAdmin ? () => void toggleLockdown() : undefined}
+        togglingRegistration={togglingLockdown}
+      />
 
       <main className="mx-auto flex max-w-[1440px] gap-5 px-3 py-5 sm:px-5">
         <LeftSidebar filter={filter} onFilterChange={selectFilter} onWrite={() => setFocusSignal((value) => value + 1)} trends={trends} />
@@ -224,7 +247,7 @@ export default function App() {
         <RightSidebar writers={writers} trends={trends} onSelectWriter={selectWriter} onSelectCategory={selectFilter} />
       </main>
 
-      <AuthModal />
+      <AuthModal registrationOpen={registrationOpen} />
       <EditProfileModal />
     </div>
   )

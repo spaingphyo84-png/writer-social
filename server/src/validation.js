@@ -6,7 +6,7 @@ export const REACTIONS = ['love', 'haha', 'sad']
 export const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp']
 export const ALLOWED_IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp']
 export const VIDEO_EXT = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v', '.ogv', '.3gp', '.wmv', '.flv']
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
 export function langFromRequest(req) {
   const requested = req.query?.lang ?? req.body?.lang
@@ -61,6 +61,16 @@ export function validateImageFile(file, lang = 'en') {
   const hasImageExt = ALLOWED_IMAGE_EXT.some((ext) => name.endsWith(ext))
   if (!hasImageMime || !hasImageExt) return t(lang, 'invalid_image_type')
   if (Number(file.size) > MAX_UPLOAD_BYTES) return t(lang, 'file_too_large')
+  return null
+}
+
+export function validateImageBuffer(file, lang = 'en') {
+  if (!file) return null
+  const buffer = Buffer.isBuffer(file.buffer) ? file.buffer : Buffer.alloc(0)
+  const isPng = buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  const isJpeg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff
+  const isWebp = buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP'
+  if (!isPng && !isJpeg && !isWebp) return t(lang, 'invalid_image_type')
   return null
 }
 

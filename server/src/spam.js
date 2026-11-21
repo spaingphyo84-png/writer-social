@@ -1,7 +1,7 @@
 export const SPAM_PATTERNS = [
   /lorem ipsum/i,
-  /this is a randomly generated post body/i,
-  /just testing the api/i,
+  /randomly generated/i,
+  /testing the api/i,
 ]
 
 export function containsSpam(value) {

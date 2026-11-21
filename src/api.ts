@@ -59,6 +59,10 @@ export interface CaptchaChallenge {
 export const api = {
   me: () => apiFetch<{ user: User }>('/auth/me'),
   captcha: () => apiFetch<CaptchaChallenge>('/auth/captcha'),
+  registrationStatus: () => apiFetch<{ registrationOpen: boolean }>('/auth/status'),
+  lockdown: (registrationOpen: boolean) => apiFetch<{ success: boolean; registrationOpen: boolean }>('/admin/lockdown', {
+    method: 'POST', body: JSON.stringify({ registrationOpen }),
+  }),
   login: (email: string, password: string) => apiFetch<AuthResponse>('/auth/login', {
     method: 'POST', body: JSON.stringify({ email, password }),
   }),

@@ -515,3 +515,113 @@ test('helmet security headers are present without breaking CORS', async () => {
   const corsResponse = await fetch(`${base}/api/health`, { headers: { Origin: 'http://localhost:5173' } })
   assert.equal(corsResponse.headers.get('access-control-allow-origin'), 'http://localhost:5173')
 })
+
+test('captcha tokens are signed and survive a server restart', async () => {
+  const { issueCaptcha } = await import('../src/captcha.js')
+  const challenge = issueCaptcha()
+  const match = challenge.question.match(/(\d+)\s*\+\s*(\d+)/)
+  assert.ok(match)
+  const answer = String(Number(match[1]) + Number(match[2]))
+
+  const { verifyCaptcha } = await import('../src/captcha.js?simulated-restart')
+  assert.equal(verifyCaptcha(challenge.captchaId, answer), true)
+  assert.equal(verifyCaptcha(challenge.captchaId, '999'), false)
+  assert.equal(verifyCaptcha(`${challenge.captchaId}tampered`, answer), false)
+  assert.equal(verifyCaptcha(challenge.captchaId.split('.')[0], answer), false)
+
+  const headers = { 'X-Forwarded-For': '203.0.113.95' }
+  const { token } = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+  const form = postForm('Tampered captcha')
+  form.set('captchaId', `${challenge.captchaId}tampered`)
+  form.set('captchaAnswer', answer)
+  const result = await api('/api/posts', auth(token, { method: 'POST', headers, body: form }))
+  assert.equal(result.status, 400)
+  assert.match(result.data.error, /verification answer/i)
+})
+
+test('login is limited to ten attempts per fifteen minutes per IP', async () => {
+  const headers = { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.100' }
+  const body = JSON.stringify({ email: 'nobody@example.com', password: 'wrong-password' })
+  for (let index = 0; index < 10; index += 1) {
+    const response = await api('/api/auth/login', { method: 'POST', headers, body })
+    assert.equal(response.status, 401)
+  }
+  const blocked = await api('/api/auth/login', { method: 'POST', headers, body })
+  assert.equal(blocked.status, 429)
+  assert.match(blocked.data.error, /Too many requests/)
+})
+
+test('oversized JSON bodies are rejected', async () => {
+  const headers = { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.101' }
+  const body = JSON.stringify({ email: 'x'.repeat(60 * 1024), password: 'secret123' })
+  const response = await api('/api/auth/login', { method: 'POST', headers, body })
+  assert.equal(response.status, 413)
+})
+
+test('all common spam text patterns are rejected', async () => {
+  const samples = [
+    'Lorem ipsum dolor sit amet',
+    'This is randomly generated content',
+    'Just testing the API again',
+  ]
+  for (const [index, sample] of samples.entries()) {
+    const headers = { 'X-Forwarded-For': `203.0.113.${102 + index}` }
+    const { token } = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+    const response = await api('/api/posts', auth(token, {
+      method: 'POST', headers, body: await withCaptcha(postForm(sample)),
+    }))
+    assert.equal(response.status, 400)
+    assert.match(response.data.error, /spam/i)
+  }
+})
+
+test('uploads reject oversized and fake images', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.106' }
+  const { token } = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+
+  const oversized = await withCaptcha(postForm('Oversized image'))
+  oversized.set('image', new Blob([Buffer.alloc(2 * 1024 * 1024 + 1)], { type: 'image/png' }), 'big.png')
+  const tooLarge = await api('/api/posts', auth(token, { method: 'POST', headers, body: oversized }))
+  assert.equal(tooLarge.status, 400)
+  assert.match(tooLarge.data.error, /too large/i)
+
+  const otherHeaders = { 'X-Forwarded-For': '203.0.113.107' }
+  const fake = await withCaptcha(postForm('Fake image'))
+  fake.set('image', new Blob([Buffer.from('definitely not a picture')], { type: 'image/png' }), 'fake.png')
+  const rejected = await api('/api/posts', auth(token, { method: 'POST', headers: otherHeaders, body: fake }))
+  assert.equal(rejected.status, 400)
+  assert.match(rejected.data.error, /JPG, PNG, and WEBP/i)
+})
+
+test('admins can pause and resume registrations', async () => {
+  const adminHeaders = { 'X-Forwarded-For': '203.0.113.110' }
+  const memberHeaders = { 'X-Forwarded-For': '203.0.113.111' }
+  const admin = await loginAs('kabya-moe@writersrealm.local', 'writer123', adminHeaders)
+  const member = await loginAs('kalone-ni@writersrealm.local', 'writer123', memberHeaders)
+  const lockdownRequest = (token, registrationOpen, headers) => auth(token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ registrationOpen }),
+  })
+
+  const denied = await api('/api/admin/lockdown', lockdownRequest(member.token, false, memberHeaders))
+  assert.equal(denied.status, 403)
+
+  const paused = await api('/api/admin/lockdown', lockdownRequest(admin.token, false, adminHeaders))
+  assert.equal(paused.status, 200)
+  assert.equal(paused.data.registrationOpen, false)
+  assert.equal((await api('/api/auth/status')).data.registrationOpen, false)
+
+  const blocked = await api('/api/auth/register', {
+    method: 'POST',
+    headers: { 'X-Forwarded-For': '203.0.113.112' },
+    body: await withCaptcha(registrationForm('locked-out@example.com')),
+  })
+  assert.equal(blocked.status, 403)
+  assert.match(blocked.data.error, /paused/i)
+
+  const resumed = await api('/api/admin/lockdown', lockdownRequest(admin.token, true, adminHeaders))
+  assert.equal(resumed.status, 200)
+  assert.equal(resumed.data.registrationOpen, true)
+  assert.equal((await api('/api/auth/status')).data.registrationOpen, true)
+})

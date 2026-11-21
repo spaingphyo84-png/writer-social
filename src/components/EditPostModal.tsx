@@ -61,7 +61,7 @@ export default function EditPostModal({ post, open, onClose, onSaved }: EditPost
       toast(t('composer.imageError'), 'error')
       return
     }
-    if (selected.size > 8 * 1024 * 1024) {
+    if (selected.size > 2 * 1024 * 1024) {
       toast(t('file.tooLarge'), 'error')
       return
     }

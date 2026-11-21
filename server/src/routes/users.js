@@ -3,7 +3,7 @@ import { db } from '../db.js'
 import { requireAuth, requireAdmin, publicUser, PUBLIC_USER_COLUMNS } from '../auth.js'
 import { validateProfile, langFromRequest } from '../validation.js'
 import { t } from '../messages.js'
-import { uploadAvatar, saveUpload } from '../upload.js'
+import { requireValidImageBuffer, uploadAvatar, saveUpload } from '../upload.js'
 
 const router = Router()
 
@@ -44,7 +44,7 @@ router.get('/trending', async (_req, res) => {
   res.json({ trending })
 })
 
-router.patch('/me', requireAuth, uploadAvatar, async (req, res) => {
+router.patch('/me', requireAuth, uploadAvatar, requireValidImageBuffer, async (req, res) => {
   const lang = langFromRequest(req)
   const result = validateProfile(req.body, lang)
   if (result.error) return res.status(400).json({ error: result.error })

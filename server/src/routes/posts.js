@@ -6,7 +6,7 @@ import {
   CATEGORIES, langFromRequest,
 } from '../validation.js'
 import { t } from '../messages.js'
-import { uploadPostImage, saveUpload } from '../upload.js'
+import { requireValidImageBuffer, uploadPostImage, saveUpload } from '../upload.js'
 import { createPostRateLimit } from '../rateLimit.js'
 import { requireCaptcha } from '../captcha.js'
 
@@ -118,7 +118,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
   res.json({ post })
 })
 
-router.post('/', requireAuth, createPostRateLimit, uploadPostImage, requireCaptcha, async (req, res) => {
+router.post('/', requireAuth, createPostRateLimit, uploadPostImage, requireValidImageBuffer, requireCaptcha, async (req, res) => {
   const lang = langFromRequest(req)
   const result = validatePost(req.body, lang)
   if (result.error) return res.status(400).json({ error: result.error })
@@ -158,8 +158,8 @@ const updatePost = async (req, res) => {
   res.json({ post: await getPost(id, req.user.id) })
 }
 
-router.put('/:id', requireAuth, uploadPostImage, updatePost)
-router.patch('/:id', requireAuth, uploadPostImage, updatePost)
+router.put('/:id', requireAuth, uploadPostImage, requireValidImageBuffer, updatePost)
+router.patch('/:id', requireAuth, uploadPostImage, requireValidImageBuffer, updatePost)
 
 router.delete('/:id', requireAuth, async (req, res) => {
   const lang = langFromRequest(req)

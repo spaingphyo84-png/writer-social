@@ -43,6 +43,10 @@ export default function EditProfileModal() {
       toast(t('composer.imageError'), 'error')
       return
     }
+    if (file.size > 2 * 1024 * 1024) {
+      toast(t('file.tooLarge'), 'error')
+      return
+    }
     setAvatar(file)
     setPreview(URL.createObjectURL(file))
   }

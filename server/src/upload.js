@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { ALLOWED_IMAGE_EXT, MAX_UPLOAD_BYTES, langFromRequest, validateImageFile } from './validation.js'
+import { ALLOWED_IMAGE_EXT, MAX_UPLOAD_BYTES, langFromRequest, validateImageBuffer, validateImageFile } from './validation.js'
 import { t } from './messages.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -15,7 +15,7 @@ const storage = multer.memoryStorage()
 
 const upload = multer({
   storage,
-  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 30, parts: 40, fieldSize: 256 * 1024 },
   fileFilter(req, file, cb) {
     const lang = langFromRequest(req)
     const error = validateImageFile(file, lang)
@@ -31,9 +31,18 @@ const upload = multer({
 export const uploadAvatar = upload.single('avatar')
 export const uploadPostImage = upload.single('image')
 
+export function requireValidImageBuffer(req, _res, next) {
+  if (!req.file) return next()
+  const error = validateImageBuffer(req.file, langFromRequest(req))
+  if (!error) return next()
+  const failure = new Error(error)
+  failure.status = 400
+  return next(failure)
+}
+
 export function saveUpload(file) {
   if (!file) return null
-  const error = validateImageFile(file)
+  const error = validateImageFile(file) || validateImageBuffer(file)
   if (error) {
     const failure = new Error(error)
     failure.status = 400

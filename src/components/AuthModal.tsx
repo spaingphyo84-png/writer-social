@@ -8,7 +8,11 @@ import { ModalShell } from './Common'
 
 type Mode = 'login' | 'register'
 
-export default function AuthModal() {
+interface AuthModalProps {
+  registrationOpen: boolean
+}
+
+export default function AuthModal({ registrationOpen }: AuthModalProps) {
   const { t } = useLocale()
   const { toast } = useToast()
   const { authOpen, authMode, openAuth, closeAuth, login, register } = useAuth()
@@ -34,7 +38,10 @@ export default function AuthModal() {
     }
   }, [])
 
-  useEffect(() => { if (authOpen) setMode(authMode) }, [authOpen, authMode])
+  useEffect(() => {
+    if (!authOpen) return
+    setMode(authMode === 'register' && !registrationOpen ? 'login' : authMode)
+  }, [authOpen, authMode, registrationOpen])
   useEffect(() => {
     if (authOpen && mode === 'register') void loadCaptcha()
   }, [authOpen, mode, loadCaptcha])
@@ -44,6 +51,10 @@ export default function AuthModal() {
   }, [preview])
 
   function switchMode(next: Mode) {
+    if (next === 'register' && !registrationOpen) {
+      toast(t('admin.signupsClosed'), 'info')
+      return
+    }
     setMode(next)
     openAuth(next)
   }
@@ -57,6 +68,10 @@ export default function AuthModal() {
     }
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       toast(t('composer.imageError'), 'error')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast(t('file.tooLarge'), 'error')
       return
     }
     setAvatar(file)
@@ -102,6 +117,7 @@ export default function AuthModal() {
           <button
             key={option}
             type="button"
+            disabled={option === 'register' && !registrationOpen}
             onClick={() => switchMode(option)}
             className={`rounded-lg py-2 text-xs font-bold transition ${mode === option ? 'bg-white text-terracotta-600 shadow-sm dark:bg-ink-700 dark:text-gold-400' : 'text-ink-700/55 dark:text-parchment-200/50'}`}
           >

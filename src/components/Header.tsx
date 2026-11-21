@@ -9,9 +9,12 @@ interface HeaderProps {
   search: string
   onSearchChange: (value: string) => void
   onWrite: () => void
+  registrationOpen: boolean
+  onToggleRegistration?: () => void
+  togglingRegistration?: boolean
 }
 
-export default function Header({ search, onSearchChange, onWrite }: HeaderProps) {
+export default function Header({ search, onSearchChange, onWrite, registrationOpen, onToggleRegistration, togglingRegistration }: HeaderProps) {
   const { t, locale, setLocale } = useLocale()
   const { theme, toggleTheme } = useTheme()
   const { user, openAuth, openProfile, logout } = useAuth()
@@ -64,6 +67,18 @@ export default function Header({ search, onSearchChange, onWrite }: HeaderProps)
             {theme === 'dark' ? <Sun className="h-[18px] w-[18px] text-gold-400" /> : <Moon className="h-[18px] w-[18px]" />}
           </button>
 
+          {user?.isAdmin && onToggleRegistration && (
+            <button
+              type="button"
+              onClick={onToggleRegistration}
+              disabled={togglingRegistration}
+              className={`rounded-full px-3 py-2 text-[11px] font-bold text-white transition disabled:opacity-60 ${registrationOpen ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
+              title={t(registrationOpen ? 'admin.signupsOpen' : 'admin.signupsLocked')}
+            >
+              {t(registrationOpen ? 'admin.signupsOpen' : 'admin.signupsLocked')}
+            </button>
+          )}
+
           {user ? (
             <>
               <button type="button" onClick={onWrite} className="btn-primary !px-2.5 !py-2 sm:!px-4" title={t('nav.write')}>
@@ -102,10 +117,12 @@ export default function Header({ search, onSearchChange, onWrite }: HeaderProps)
                 <UserRound className="h-4 w-4 sm:hidden" />
                 <span className="hidden sm:inline">{t('nav.signIn')}</span>
               </button>
-              <button type="button" onClick={() => openAuth('register')} className="btn-primary !px-2.5 !py-2 sm:!px-4">
-                <PenLine className="h-4 w-4" />
-                <span className="hidden sm:inline">{t('nav.join')}</span>
-              </button>
+              {registrationOpen && (
+                <button type="button" onClick={() => openAuth('register')} className="btn-primary !px-2.5 !py-2 sm:!px-4">
+                  <PenLine className="h-4 w-4" />
+                  <span className="hidden sm:inline">{t('nav.join')}</span>
+                </button>
+              )}
             </>
           )}
         </div>
