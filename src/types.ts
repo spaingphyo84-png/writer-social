@@ -46,9 +46,9 @@ export interface Comment {
 }
 
 export interface User extends Author {
-  email: string
   bio: string
   createdAt: string
+  isAdmin: boolean
 }
 
 export interface Writer extends User {

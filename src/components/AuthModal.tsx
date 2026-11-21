@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { Camera, Loader2, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Camera, Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import { api, type CaptchaChallenge } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useLocale } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
@@ -19,10 +20,24 @@ export default function AuthModal() {
   const [bio, setBio] = useState('')
   const [avatar, setAvatar] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null)
+  const [captchaAnswer, setCaptchaAnswer] = useState('')
   const [loading, setLoading] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
+  const loadCaptcha = useCallback(async () => {
+    try {
+      setCaptcha(await api.captcha())
+      setCaptchaAnswer('')
+    } catch {
+      setCaptcha(null)
+    }
+  }, [])
+
   useEffect(() => { if (authOpen) setMode(authMode) }, [authOpen, authMode])
+  useEffect(() => {
+    if (authOpen && mode === 'register') void loadCaptcha()
+  }, [authOpen, mode, loadCaptcha])
   useEffect(() => {
     if (!preview) return
     return () => URL.revokeObjectURL(preview)
@@ -60,6 +75,9 @@ export default function AuthModal() {
         data.set('email', email.trim())
         data.set('password', password)
         data.set('bio', bio.trim())
+        data.set('captchaId', captcha?.captchaId ?? '')
+        data.set('captchaAnswer', captchaAnswer.trim())
+        data.set('website', '')
         if (avatar) data.set('avatar', avatar)
         await register(data)
       }
@@ -68,6 +86,7 @@ export default function AuthModal() {
       toast(error instanceof Error ? error.message : t('common.error'), 'error')
     } finally {
       setLoading(false)
+      if (mode === 'register') void loadCaptcha()
     }
   }
 
@@ -124,10 +143,23 @@ export default function AuthModal() {
           <input id="auth-password" type="password" className="input" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t('auth.passwordPlaceholder')} minLength={6} required />
         </div>
         {mode === 'register' && (
-          <div>
-            <label className="label" htmlFor="auth-bio">{t('auth.bio')}</label>
-            <textarea id="auth-bio" rows={2} className="input resize-none" value={bio} onChange={(event) => setBio(event.target.value)} placeholder={t('auth.bioPlaceholder')} />
-          </div>
+          <>
+            <div>
+              <label className="label" htmlFor="auth-bio">{t('auth.bio')}</label>
+              <textarea id="auth-bio" rows={2} className="input resize-none" value={bio} onChange={(event) => setBio(event.target.value)} placeholder={t('auth.bioPlaceholder')} />
+            </div>
+            <div className="rounded-xl border border-dashed border-parchment-300 p-3 dark:border-ink-700">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold text-ink-700/60 dark:text-parchment-200/55">{t('auth.captchaLabel')}</p>
+                <button type="button" onClick={() => void loadCaptcha()} className="btn-ghost !py-1 text-[11px]">
+                  <RefreshCw className="h-3 w-3" /> {t('auth.refreshCaptcha')}
+                </button>
+              </div>
+              <label className="label mt-2" htmlFor="auth-captcha">{captcha?.question ?? t('common.loading')}</label>
+              <input id="auth-captcha" className="input" inputMode="numeric" value={captchaAnswer} onChange={(event) => setCaptchaAnswer(event.target.value)} required />
+            </div>
+            <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
+          </>
         )}
 
         <button type="submit" disabled={loading} className="btn-primary w-full !py-3">

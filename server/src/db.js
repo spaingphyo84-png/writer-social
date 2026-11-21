@@ -1,20 +1,17 @@
-import Database from 'better-sqlite3'
 import bcrypt from 'bcryptjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 export const dataDir = path.join(root, 'data')
 export const dbPath = path.join(dataDir, 'writers-realm.db')
+export const ADMIN_EMAIL = 'kabya-moe@writersrealm.local'
 
-fs.mkdirSync(dataDir, { recursive: true })
+if (!process.env.DATABASE_URL) fs.mkdirSync(dataDir, { recursive: true })
 
-export function createDatabase(filename = dbPath) {
-  const db = new Database(filename)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-  db.exec(`
+const SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
@@ -23,6 +20,7 @@ export function createDatabase(filename = dbPath) {
       pen_name TEXT NOT NULL,
       bio TEXT NOT NULL DEFAULT '',
       avatar_url TEXT,
+      is_admin BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -61,13 +59,186 @@ export function createDatabase(filename = dbPath) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE INDEX IF NOT EXISTS idx_posts_category_created ON posts(category, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);
-    CREATE INDEX IF NOT EXISTS idx_reactions_post ON reactions(post_id);
-    CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
-    CREATE INDEX IF NOT EXISTS idx_shares_post ON shares(post_id);
-  `)
-  return db
+  CREATE INDEX IF NOT EXISTS idx_posts_category_created ON posts(category, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);
+  CREATE INDEX IF NOT EXISTS idx_reactions_post ON reactions(post_id);
+  CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
+  CREATE INDEX IF NOT EXISTS idx_shares_post ON shares(post_id);
+`
+
+function toPostgres(sql) {
+  let converted = ''
+  let index = 0
+  let quote = null
+  let lineComment = false
+  let blockComment = false
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i]
+    const next = sql[i + 1]
+
+    if (lineComment) {
+      converted += ch
+      if (ch === '\n') lineComment = false
+      continue
+    }
+    if (blockComment) {
+      converted += ch
+      if (ch === '*' && next === '/') {
+        converted += next
+        i += 1
+        blockComment = false
+      }
+      continue
+    }
+    if (quote) {
+      converted += ch
+      if (ch === quote) {
+        if (next === quote) {
+          converted += next
+          i += 1
+        } else {
+          quote = null
+        }
+      }
+      continue
+    }
+    if (ch === '-' && next === '-') {
+      lineComment = true
+      converted += ch
+      continue
+    }
+    if (ch === '/' && next === '*') {
+      blockComment = true
+      converted += ch
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      converted += ch
+      continue
+    }
+    if (ch === '?') {
+      converted += `$${index + 1}`
+      index += 1
+      continue
+    }
+    converted += ch
+  }
+
+  return converted
+    .replace(/\bdatetime\s*\(\s*'now'\s*\)/gi, 'CURRENT_TIMESTAMP')
+    .replace(/\bdatetime\s*\(\s*"now"\s*\)/gi, 'CURRENT_TIMESTAMP')
+    .replace(/\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b/gi, 'INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY')
+    .replace(/\bCURRENT_TIMESTAMP\b/gi, "to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')")
+}
+
+function createLock() {
+  let tail = Promise.resolve()
+  return (fn) => {
+    const result = tail.then(fn, fn)
+    tail = result.then(() => undefined, () => undefined)
+    return result
+  }
+}
+
+async function createSqliteDatabase(filename = dbPath) {
+  const { default: Database } = await import('better-sqlite3')
+  const sqlite = new Database(filename)
+  sqlite.pragma('journal_mode = WAL')
+  sqlite.pragma('foreign_keys = ON')
+
+  const withLock = createLock()
+  const txContext = new AsyncLocalStorage()
+
+  function prepare(sql) {
+    const prepared = sqlite.prepare(sql)
+    const guarded = (operation) => (txContext.getStore() ? Promise.resolve().then(operation) : withLock(operation))
+    return {
+      get: (...params) => guarded(() => prepared.get(...params)),
+      all: (...params) => guarded(() => prepared.all(...params)),
+      run: (...params) => guarded(() => prepared.run(...params)),
+    }
+  }
+
+  return {
+    dialect: 'sqlite',
+    exec: (sql) => withLock(() => { sqlite.exec(sql) }),
+    prepare,
+    transaction(fn) {
+      return () => withLock(async () => {
+        sqlite.exec('BEGIN IMMEDIATE')
+        try {
+          const result = await txContext.run(true, fn)
+          sqlite.exec('COMMIT')
+          return result
+        } catch (error) {
+          sqlite.exec('ROLLBACK')
+          throw error
+        }
+      })
+    },
+  }
+}
+
+async function createPostgresDatabase() {
+  const { default: pg } = await import('pg')
+  const { Pool, types } = pg
+
+  types.setTypeParser(20, Number)
+  types.setTypeParser(1700, Number)
+
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  })
+  const txContext = new AsyncLocalStorage()
+
+  function query(sql, params = []) {
+    const client = txContext.getStore()
+    return client ? client.query(sql, params) : pool.query(sql, params)
+  }
+
+  return {
+    dialect: 'postgres',
+    exec: (sql) => query(toPostgres(sql)),
+    prepare(rawSql) {
+      const sql = toPostgres(rawSql)
+      const runSql = /^\s*INSERT\b/i.test(sql) && !/\bRETURNING\b/i.test(sql)
+        ? `${sql} RETURNING id`
+        : sql
+      return {
+        get: async (...params) => {
+          const { rows } = await query(sql, params)
+          return rows[0]
+        },
+        all: async (...params) => {
+          const { rows } = await query(sql, params)
+          return rows
+        },
+        run: async (...params) => {
+          const { rows, rowCount } = await query(runSql, params)
+          return { changes: rowCount, lastInsertRowid: rows[0]?.id }
+        },
+      }
+    },
+    transaction(fn) {
+      return async () => {
+        const client = await pool.connect()
+        try {
+          await client.query('BEGIN')
+          const result = await txContext.run(client, fn)
+          await client.query('COMMIT')
+          return result
+        } catch (error) {
+          await client.query('ROLLBACK')
+          throw error
+        } finally {
+          client.release()
+        }
+      }
+    },
+  }
 }
 
 const seedWriters = [
@@ -193,27 +364,32 @@ const seedComments = [
   { post: 5, user: 1, body: 'စာအိမ်ဆိုတဲ့ အခေါ်အဝေါ်လေး အရမ်းလှတယ်။' },
 ]
 
+function adminValue(db, isAdmin) {
+  return db.dialect === 'postgres' ? isAdmin : (isAdmin ? 1 : 0)
+}
+
 function ago(age) {
   const [, amount, unit] = age.match(/^(\d+) (hour|day)s?$/) || []
   const ms = unit === 'hour' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000
   return new Date(Date.now() - Number(amount || 1) * ms).toISOString().replace('T', ' ').slice(0, 19)
 }
 
-export function seedDatabase(db) {
-  const existing = db.prepare('SELECT COUNT(*) AS count FROM users').get().count
-  if (existing > 0) return false
+export async function seedDatabase(db) {
+  const existing = (await db.prepare('SELECT COUNT(*) AS count FROM users').get()).count
+  if (Number(existing) > 0) return false
 
   const insertUser = db.prepare(`
-    INSERT INTO users (email, password_hash, author_name, pen_name, bio, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO users (email, password_hash, author_name, pen_name, bio, is_admin, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `)
   const insertPost = db.prepare(`
     INSERT INTO posts (user_id, category, title, body, created_at)
     VALUES (?, ?, ?, ?, ?)
   `)
-  const insertReaction = db.prepare(`
-    INSERT OR REPLACE INTO reactions (user_id, post_id, type, created_at) VALUES (?, ?, ?, ?)
-  `)
+  const insertReaction = db.prepare(db.dialect === 'postgres'
+    ? `INSERT INTO reactions (user_id, post_id, type, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (user_id, post_id) DO UPDATE SET type = EXCLUDED.type, created_at = EXCLUDED.created_at`
+    : `INSERT OR REPLACE INTO reactions (user_id, post_id, type, created_at) VALUES (?, ?, ?, ?)`)
   const insertComment = db.prepare(`
     INSERT INTO comments (post_id, user_id, body, created_at) VALUES (?, ?, ?, ?)
   `)
@@ -221,38 +397,92 @@ export function seedDatabase(db) {
     INSERT INTO shares (post_id, user_id, created_at) VALUES (?, NULL, ?)
   `)
 
-  const seed = db.transaction(() => {
+  const seed = db.transaction(async () => {
     const passwordHash = bcrypt.hashSync('writer123', 10)
     const created = ago('6 days')
-    const userIds = seedWriters.map((writer) =>
-      Number(insertUser.run(writer.email, passwordHash, writer.authorName, writer.penName, writer.bio, created).lastInsertRowid),
-    )
-    const postIds = seedPosts.map((post) =>
-      Number(insertPost.run(userIds[post.user - 1], post.category, post.title, post.body, ago(post.age)).lastInsertRowid),
-    )
+    const userIds = []
+    for (const writer of seedWriters) {
+      const info = await insertUser.run(
+        writer.email, passwordHash, writer.authorName, writer.penName, writer.bio,
+        adminValue(db, writer.email === ADMIN_EMAIL), created,
+      )
+      userIds.push(Number(info.lastInsertRowid))
+    }
+
+    const postIds = []
+    for (const post of seedPosts) {
+      const info = await insertPost.run(
+        userIds[post.user - 1], post.category, post.title, post.body, ago(post.age),
+      )
+      postIds.push(Number(info.lastInsertRowid))
+    }
 
     const reactionPlan = [
       [0, 'love'], [0, 'haha'], [1, 'sad'], [2, 'love'], [2, 'haha'], [3, 'sad'],
       [4, 'love'], [4, 'haha'], [5, 'love'], [6, 'haha'],
     ]
-    reactionPlan.forEach(([postIndex, type], index) => {
+    for (const [index, [postIndex, type]] of reactionPlan.entries()) {
       const reactor = userIds[index % 2]
       if (postIds[postIndex] && reactor !== undefined) {
-        insertReaction.run(reactor, postIds[postIndex], type, ago('1 hour'))
+        await insertReaction.run(reactor, postIds[postIndex], type, ago('1 hour'))
       }
-    })
+    }
 
-    seedComments.forEach((comment, index) => {
-      insertComment.run(postIds[comment.post - 1], userIds[comment.user - 1], comment.body, ago('2 hours'))
-    })
-    insertShare.run(postIds[0], ago('1 hour'))
-    insertShare.run(postIds[1], ago('1 hour'))
-    insertShare.run(postIds[4], ago('1 hour'))
+    for (const comment of seedComments) {
+      await insertComment.run(postIds[comment.post - 1], userIds[comment.user - 1], comment.body, ago('2 hours'))
+    }
+    await insertShare.run(postIds[0], ago('1 hour'))
+    await insertShare.run(postIds[1], ago('1 hour'))
+    await insertShare.run(postIds[4], ago('1 hour'))
   })
 
-  seed()
+  await seed()
   return true
 }
 
-export const db = createDatabase(process.env.WRITERS_REALM_DB || dbPath)
-seedDatabase(db)
+export const db = process.env.DATABASE_URL
+  ? await createPostgresDatabase()
+  : await createSqliteDatabase(process.env.WRITERS_REALM_DB || dbPath)
+
+async function ensureAdminColumn(database) {
+  try {
+    await database.exec('ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE')
+  } catch (error) {
+    const duplicateColumn = error?.code === '42701' ||
+      (error?.code === 'SQLITE_ERROR' && /duplicate column name/i.test(error?.message || ''))
+    if (!duplicateColumn) throw error
+  }
+}
+
+async function ensureDemoUser(database) {
+  const existing = await database.prepare('SELECT id FROM users WHERE email = ?').get(ADMIN_EMAIL)
+  if (existing) return
+
+  const writer = seedWriters[0]
+  const columns = '(email, password_hash, author_name, pen_name, bio, is_admin, created_at)'
+  const values = 'VALUES (?, ?, ?, ?, ?, ?, ?)'
+  const conflict = database.dialect === 'postgres' ? ' ON CONFLICT (email) DO NOTHING' : ' OR IGNORE'
+  const insert = database.dialect === 'postgres'
+    ? `INSERT INTO users ${columns} ${values}${conflict}`
+    : `INSERT${conflict} INTO users ${columns} ${values}`
+
+  await database.prepare(insert).run(
+    ADMIN_EMAIL,
+    bcrypt.hashSync('writer123', 10),
+    writer.authorName,
+    writer.penName,
+    writer.bio,
+    adminValue(database, true),
+    ago('6 days'),
+  )
+}
+
+export async function initializeDatabase() {
+  await db.exec(SCHEMA_SQL)
+  await ensureAdminColumn(db)
+  await seedDatabase(db)
+  await ensureDemoUser(db)
+  await db.prepare('UPDATE users SET is_admin = ? WHERE email = ?').run(adminValue(db, true), ADMIN_EMAIL)
+}
+
+await initializeDatabase()

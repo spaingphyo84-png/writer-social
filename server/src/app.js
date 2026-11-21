@@ -1,10 +1,12 @@
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import authRoutes from './routes/auth.js'
 import userRoutes from './routes/users.js'
+import adminRoutes from './routes/admin.js'
 import postRoutes from './routes/posts.js'
 import { uploadErrorHandler, uploadsDir } from './upload.js'
 import { langFromRequest } from './validation.js'
@@ -40,6 +42,30 @@ const corsOptions = {
 export function createApp() {
   const app = express()
   app.disable('x-powered-by')
+  app.set('trust proxy', 1)
+  app.use(helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        connectSrc: ["'self'", 'capacitor:', 'https:', 'http://localhost:*', 'http://127.0.0.1:*'],
+        fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", 'data:', 'blob:', 'capacitor:', 'https:', 'http://localhost:*', 'http://127.0.0.1:*'],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'", 'capacitor:'],
+        scriptSrcAttr: ["'none'"],
+        styleSrc: ["'self'", 'https://fonts.googleapis.com'],
+        upgradeInsecureRequests: null,
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    strictTransportSecurity: { maxAge: 15552000, includeSubDomains: true },
+  }))
   app.use(cors(corsOptions))
   app.use(express.json({ limit: '100kb' }))
   app.use(express.urlencoded({ extended: true, limit: '100kb' }))
@@ -54,6 +80,7 @@ export function createApp() {
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', app: "Writer's Realm" }))
   app.use('/api/auth', authRoutes)
   app.use('/api/users', userRoutes)
+  app.use('/api/admin', adminRoutes)
   app.use('/api/posts', postRoutes)
   app.use('/api', (_req, res) => res.status(404).json({ error: t(langFromRequest(_req), 'not_found') }))
 

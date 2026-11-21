@@ -24,6 +24,10 @@ const en = {
   upload_failed: 'The upload failed. Please try again.',
   invalid_share_kind: 'Please choose a valid share option.',
   repost_requires_auth: 'Please sign in to repost to your feed.',
+  rate_limited: 'Too many requests. Please try again later.',
+  invalid_captcha: 'The verification answer is missing or incorrect. Please try again.',
+  spam_detected: 'This looks like spam. Please remove suspicious links or random text.',
+  cannot_delete_self: 'You cannot delete your own account.',
   server_error: 'Something went wrong. Please try again.',
 }
 
@@ -53,6 +57,10 @@ const my = {
   upload_failed: 'ဖိုင်တင်ရန် မအောင်မြင်ပါ။ ထပ်ကြိုးစားပေးပါ။',
   invalid_share_kind: 'မှန်ကန်သော မျှဝေမှု ရွေးချယ်ပေးပါ။',
   repost_requires_auth: 'ဖီးထဲသို့ ပြန်တင်ရန် အကောင့်ဝင်ပေးပါ။',
+  rate_limited: 'တောင်းဆိုမှု များလွန်းပါသည်။ နည်းနည်းစောင့်ပြီး ထပ်ကြိုးစားပါ။',
+  invalid_captcha: 'အတည်ပြုချက် အဖြေ မရှိသော်လည်း မှားယွင်းနေပါသည်။ ထပ်ကြိုးစားပါ။',
+  spam_detected: 'ဒါက spam လို ဖြစ်နေပါတယ်။ သံသယဖြစ်ဖွယ် စာသားတွေ ဖယ်ရှားပေးပါ။',
+  cannot_delete_self: 'သင့်အကောင့်ကိုယ်တိုင် ဖျက်လို့မရပါ။',
   server_error: 'တစ်ခုခု မှားယွင်းနေပါသည်။ ထပ်ကြိုးစားပေးပါ။',
 }
 

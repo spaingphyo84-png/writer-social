@@ -7,6 +7,8 @@ import {
 } from '../validation.js'
 import { t } from '../messages.js'
 import { uploadPostImage, saveUpload } from '../upload.js'
+import { createPostRateLimit } from '../rateLimit.js'
+import { requireCaptcha } from '../captcha.js'
 
 const router = Router()
 
@@ -63,8 +65,8 @@ function mapPost(row) {
   }
 }
 
-function reactionCounts(postId, viewerId = null) {
-  const row = db.prepare(`
+async function reactionCounts(postId, viewerId = null) {
+  const row = await db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM reactions WHERE post_id = ? AND type = 'love') AS love,
       (SELECT COUNT(*) FROM reactions WHERE post_id = ? AND type = 'haha') AS haha,
@@ -74,8 +76,8 @@ function reactionCounts(postId, viewerId = null) {
   return { ...row, viewerReaction: row.viewerReaction ?? null }
 }
 
-function getPost(id, viewerId = null) {
-  const row = db.prepare(`SELECT ${POST_COLUMNS} ${POST_FROM} WHERE p.id = ?`).get(viewerId, id)
+async function getPost(id, viewerId = null) {
+  const row = await db.prepare(`SELECT ${POST_COLUMNS} ${POST_FROM} WHERE p.id = ?`).get(viewerId, id)
   return row ? mapPost(row) : null
 }
 
@@ -84,7 +86,7 @@ function validId(value) {
   return Number.isInteger(id) && id > 0 ? id : null
 }
 
-router.get('/', optionalAuth, (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   const viewerId = req.user?.id ?? null
   const where = []
   const params = [viewerId]
@@ -101,7 +103,7 @@ router.get('/', optionalAuth, (req, res) => {
   }
   const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100)
 
-  const rows = db.prepare(`
+  const rows = await db.prepare(`
     SELECT ${POST_COLUMNS} ${POST_FROM}
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY p.created_at DESC, p.id DESC LIMIT ?
@@ -109,30 +111,30 @@ router.get('/', optionalAuth, (req, res) => {
   res.json({ posts: rows.map(mapPost) })
 })
 
-router.get('/:id', optionalAuth, (req, res) => {
+router.get('/:id', optionalAuth, async (req, res) => {
   const id = validId(req.params.id)
-  const post = id ? getPost(id, req.user?.id ?? null) : null
+  const post = id ? await getPost(id, req.user?.id ?? null) : null
   if (!post) return res.status(404).json({ error: t(langFromRequest(req), 'post_not_found') })
   res.json({ post })
 })
 
-router.post('/', requireAuth, uploadPostImage, (req, res) => {
+router.post('/', requireAuth, createPostRateLimit, uploadPostImage, requireCaptcha, async (req, res) => {
   const lang = langFromRequest(req)
   const result = validatePost(req.body, lang)
   if (result.error) return res.status(400).json({ error: result.error })
   const { category, title, body: postBody } = result.value
   const imageUrl = saveUpload(req.file)
 
-  const info = db.prepare(`
+  const info = await db.prepare(`
     INSERT INTO posts (user_id, category, title, body, image_url) VALUES (?, ?, ?, ?, ?)
   `).run(req.user.id, category, title, postBody, imageUrl)
-  res.status(201).json({ post: getPost(Number(info.lastInsertRowid), req.user.id) })
+  res.status(201).json({ post: await getPost(Number(info.lastInsertRowid), req.user.id) })
 })
 
-const updatePost = (req, res) => {
+const updatePost = async (req, res) => {
   const lang = langFromRequest(req)
   const id = validId(req.params.id)
-  const post = id ? db.prepare('SELECT * FROM posts WHERE id = ?').get(id) : null
+  const post = id ? await db.prepare('SELECT id, user_id FROM posts WHERE id = ?').get(id) : null
   if (!post) return res.status(404).json({ error: t(lang, 'post_not_found') })
   if (post.user_id !== req.user.id) return res.status(403).json({ error: t(lang, 'forbidden') })
 
@@ -151,60 +153,62 @@ const updatePost = (req, res) => {
   }
 
   if (columns.length) {
-    db.prepare(`UPDATE posts SET ${columns.join(', ')} WHERE id = ?`).run(...params, id)
+    await db.prepare(`UPDATE posts SET ${columns.join(', ')} WHERE id = ?`).run(...params, id)
   }
-  res.json({ post: getPost(id, req.user.id) })
+  res.json({ post: await getPost(id, req.user.id) })
 }
 
 router.put('/:id', requireAuth, uploadPostImage, updatePost)
 router.patch('/:id', requireAuth, uploadPostImage, updatePost)
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   const lang = langFromRequest(req)
   const id = validId(req.params.id)
-  const post = id ? db.prepare('SELECT * FROM posts WHERE id = ?').get(id) : null
+  const post = id ? await db.prepare('SELECT id, user_id FROM posts WHERE id = ?').get(id) : null
   if (!post) return res.status(404).json({ error: t(lang, 'post_not_found') })
-  if (post.user_id !== req.user.id) return res.status(403).json({ error: t(lang, 'forbidden') })
-  db.prepare('DELETE FROM posts WHERE id = ?').run(id)
+  const isAdmin = Boolean(req.user.is_admin)
+  if (post.user_id !== req.user.id && !isAdmin) return res.status(403).json({ error: t(lang, 'forbidden') })
+  await db.prepare('DELETE FROM posts WHERE id = ?').run(id)
   res.json({ success: true })
 })
 
-router.post('/:id/react', requireAuth, (req, res) => {
+router.post('/:id/react', requireAuth, async (req, res) => {
   const lang = langFromRequest(req)
   const id = validId(req.params.id)
-  if (!id || !db.prepare('SELECT id FROM posts WHERE id = ?').get(id)) {
+  if (!id || !(await db.prepare('SELECT id FROM posts WHERE id = ?').get(id))) {
     return res.status(404).json({ error: t(lang, 'post_not_found') })
   }
   const result = validateReaction(req.body, lang)
   if (result.error) return res.status(400).json({ error: result.error })
   const { type } = result.value
 
-  const toggle = db.transaction(() => {
-    const current = db.prepare('SELECT type FROM reactions WHERE user_id = ? AND post_id = ?').get(req.user.id, id)
+  const toggle = db.transaction(async () => {
+    const current = await db.prepare('SELECT type FROM reactions WHERE user_id = ? AND post_id = ?').get(req.user.id, id)
     if (current?.type === type) {
-      db.prepare('DELETE FROM reactions WHERE user_id = ? AND post_id = ?').run(req.user.id, id)
+      await db.prepare('DELETE FROM reactions WHERE user_id = ? AND post_id = ?').run(req.user.id, id)
     } else if (current) {
-      db.prepare('UPDATE reactions SET type = ?, created_at = CURRENT_TIMESTAMP WHERE user_id = ? AND post_id = ?')
+      await db.prepare('UPDATE reactions SET type = ?, created_at = CURRENT_TIMESTAMP WHERE user_id = ? AND post_id = ?')
         .run(type, req.user.id, id)
     } else {
-      db.prepare('INSERT INTO reactions (user_id, post_id, type) VALUES (?, ?, ?)').run(req.user.id, id, type)
+      await db.prepare('INSERT INTO reactions (user_id, post_id, type) VALUES (?, ?, ?)').run(req.user.id, id, type)
     }
   })
-  toggle()
-  res.json({ counts: reactionCounts(id, req.user.id) })
+  await toggle()
+  res.json({ counts: await reactionCounts(id, req.user.id) })
 })
 
-router.get('/:id/comments', (req, res) => {
+router.get('/:id/comments', async (req, res) => {
   const id = validId(req.params.id)
-  if (!id || !db.prepare('SELECT id FROM posts WHERE id = ?').get(id)) {
+  if (!id || !(await db.prepare('SELECT id FROM posts WHERE id = ?').get(id))) {
     return res.status(404).json({ error: t(langFromRequest(req), 'post_not_found') })
   }
-  const comments = db.prepare(`
+  const rows = await db.prepare(`
     SELECT c.id, c.post_id, c.body, c.created_at, c.user_id,
            u.author_name, u.pen_name, u.avatar_url
     FROM comments c JOIN users u ON u.id = c.user_id
     WHERE c.post_id = ? ORDER BY c.created_at ASC, c.id ASC
-  `).all(id).map((row) => ({
+  `).all(id)
+  const comments = rows.map((row) => ({
     id: row.id,
     body: row.body,
     createdAt: row.created_at,
@@ -218,17 +222,17 @@ router.get('/:id/comments', (req, res) => {
   res.json({ comments })
 })
 
-router.post('/:id/comments', requireAuth, (req, res) => {
+router.post('/:id/comments', requireAuth, async (req, res) => {
   const lang = langFromRequest(req)
   const id = validId(req.params.id)
-  if (!id || !db.prepare('SELECT id FROM posts WHERE id = ?').get(id)) {
+  if (!id || !(await db.prepare('SELECT id FROM posts WHERE id = ?').get(id))) {
     return res.status(404).json({ error: t(lang, 'post_not_found') })
   }
   const result = validateComment(req.body, lang)
   if (result.error) return res.status(400).json({ error: result.error })
-  const info = db.prepare('INSERT INTO comments (post_id, user_id, body) VALUES (?, ?, ?)')
+  const info = await db.prepare('INSERT INTO comments (post_id, user_id, body) VALUES (?, ?, ?)')
     .run(id, req.user.id, result.value.body)
-  const comment = db.prepare(`
+  const comment = await db.prepare(`
     SELECT c.id, c.post_id, c.body, c.created_at, c.user_id,
            u.author_name, u.pen_name, u.avatar_url
     FROM comments c JOIN users u ON u.id = c.user_id WHERE c.id = ?
@@ -248,23 +252,25 @@ router.post('/:id/comments', requireAuth, (req, res) => {
   })
 })
 
-router.delete('/:id/comments/:commentId', requireAuth, (req, res) => {
+router.delete('/:id/comments/:commentId', requireAuth, async (req, res) => {
   const lang = langFromRequest(req)
   const postId = validId(req.params.id)
   const commentId = validId(req.params.commentId)
   const comment = postId && commentId
-    ? db.prepare('SELECT * FROM comments WHERE id = ? AND post_id = ?').get(commentId, postId)
+    ? await db.prepare('SELECT id, user_id FROM comments WHERE id = ? AND post_id = ?').get(commentId, postId)
     : null
   if (!comment) return res.status(404).json({ error: t(lang, 'comment_not_found') })
   if (comment.user_id !== req.user.id) return res.status(403).json({ error: t(lang, 'forbidden') })
-  db.prepare('DELETE FROM comments WHERE id = ?').run(commentId)
+  await db.prepare('DELETE FROM comments WHERE id = ?').run(commentId)
   res.json({ success: true })
 })
 
-router.post('/:id/share', optionalAuth, (req, res) => {
+router.post('/:id/share', optionalAuth, async (req, res) => {
   const lang = langFromRequest(req)
   const id = validId(req.params.id)
-  const original = id ? db.prepare('SELECT * FROM posts WHERE id = ?').get(id) : null
+  const original = id
+    ? await db.prepare('SELECT id, user_id, category, title, body, image_url FROM posts WHERE id = ?').get(id)
+    : null
   if (!original) return res.status(404).json({ error: t(lang, 'post_not_found') })
 
   const kind = String(req.body?.kind ?? 'link')
@@ -274,21 +280,21 @@ router.post('/:id/share', optionalAuth, (req, res) => {
   }
 
   let repost = null
-  const share = db.transaction(() => {
-    db.prepare('INSERT INTO shares (post_id, user_id) VALUES (?, ?)').run(id, req.user?.id ?? null)
+  const share = db.transaction(async () => {
+    await db.prepare('INSERT INTO shares (post_id, user_id) VALUES (?, ?)').run(id, req.user?.id ?? null)
     if (kind === 'repost') {
-      const info = db.prepare(`
+      const info = await db.prepare(`
         INSERT INTO posts (user_id, category, title, body, image_url, repost_of)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(req.user.id, original.category, original.title, original.body, original.image_url, id)
-      repost = getPost(Number(info.lastInsertRowid), req.user.id)
+      repost = await getPost(Number(info.lastInsertRowid), req.user.id)
     }
   })
-  share()
+  await share()
   res.status(kind === 'repost' ? 201 : 200).json({
     repost,
-    counts: reactionCounts(id, req.user?.id ?? null),
-    shareCount: db.prepare('SELECT COUNT(*) AS count FROM shares WHERE post_id = ?').get(id).count,
+    counts: await reactionCounts(id, req.user?.id ?? null),
+    shareCount: (await db.prepare('SELECT COUNT(*) AS count FROM shares WHERE post_id = ?').get(id)).count,
   })
 })
 

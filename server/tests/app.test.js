@@ -37,6 +37,16 @@ const PNG = Buffer.from(
   'base64',
 )
 
+async function withCaptcha(form) {
+  const challenge = await api('/api/auth/captcha')
+  const match = challenge.data.question.match(/(\d+)\s*\+\s*(\d+)/)
+  assert.ok(match)
+  form.set('captchaId', challenge.data.captchaId)
+  form.set('captchaAnswer', String(Number(match[1]) + Number(match[2])))
+  form.set('website', '')
+  return form
+}
+
 test('health check responds', async () => {
   const { status, data } = await api('/api/health')
   assert.equal(status, 200)
@@ -70,13 +80,15 @@ test('seed data includes writers, poems and short stories', async () => {
 })
 
 test('registration, login and profile update work', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.10' }
   const form = new FormData()
   form.set('authorName', 'Test Author')
   form.set('penName', 'Test Pen')
   form.set('email', 'test@example.com')
   form.set('password', 'secret123')
   form.set('bio', 'Hello')
-  const registered = await api('/api/auth/register', { method: 'POST', body: form })
+  await withCaptcha(form)
+  const registered = await api('/api/auth/register', { method: 'POST', headers, body: form })
   assert.equal(registered.status, 201)
   assert.equal(registered.data.user.penName, 'Test Pen')
   const token = registered.data.token
@@ -99,9 +111,10 @@ test('registration, login and profile update work', async () => {
 })
 
 test('video uploads are blocked in English and Myanmar', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.11' }
   const token = (await api('/api/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ email: 'kabya-moe@writersrealm.local', password: 'writer123' }),
   })).data.token
 
@@ -110,13 +123,15 @@ test('video uploads are blocked in English and Myanmar', async () => {
   video.set('title', 'Nope')
   video.set('body', 'No videos allowed')
   video.set('image', new Blob([Buffer.from('fake video')], { type: 'video/mp4' }), 'clip.mp4')
-  const en = await api('/api/posts', auth(token, { method: 'POST', body: video }))
+  await withCaptcha(video)
+  const en = await api('/api/posts', auth(token, { method: 'POST', headers, body: video }))
   assert.equal(en.status, 400)
   assert.match(en.data.error, /Videos are not allowed/)
 
+  await withCaptcha(video)
   const my = await api('/api/posts', {
     method: 'POST',
-    headers: { 'Accept-Language': 'my', Authorization: `Bearer ${token}` },
+    headers: { ...headers, 'Accept-Language': 'my', Authorization: `Bearer ${token}` },
     body: video,
   })
   assert.equal(my.status, 400)
@@ -124,9 +139,10 @@ test('video uploads are blocked in English and Myanmar', async () => {
 })
 
 test('image post, reactions, comments and share flows work', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.12' }
   const login = await api('/api/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ email: 'kabya-moe@writersrealm.local', password: 'writer123' }),
   })
   const token = login.data.token
@@ -136,7 +152,8 @@ test('image post, reactions, comments and share flows work', async () => {
   form.set('title', 'ပုံနဲ့ ကဗျာ')
   form.set('body', 'ပုံလေးနဲ့ စာကြောင်းလေး')
   form.set('image', new Blob([PNG], { type: 'image/png' }), 'test.png')
-  const created = await api('/api/posts', auth(token, { method: 'POST', body: form }))
+  await withCaptcha(form)
+  const created = await api('/api/posts', auth(token, { method: 'POST', headers, body: form }))
   assert.equal(created.status, 201)
   const post = created.data.post
   assert.equal(post.category, 'poem')
@@ -196,9 +213,10 @@ test('image post, reactions, comments and share flows work', async () => {
 })
 
 test('authors can edit their own posts and remove images', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.13' }
   const loginAs = async (email) => (await api('/api/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ email, password: 'writer123' }),
   })).data.token
 
@@ -210,7 +228,8 @@ test('authors can edit their own posts and remove images', async () => {
   form.set('title', 'Before editing')
   form.set('body', 'Original lines')
   form.set('image', new Blob([PNG], { type: 'image/png' }), 'edit-before.png')
-  const created = await api('/api/posts', auth(ownerToken, { method: 'POST', body: form }))
+  await withCaptcha(form)
+  const created = await api('/api/posts', auth(ownerToken, { method: 'POST', headers, body: form }))
   assert.equal(created.status, 201)
   const post = created.data.post
   const originalImage = post.imageUrl
@@ -255,4 +274,244 @@ test('authors can edit their own posts and remove images', async () => {
   assert.equal(fetched.data.post.body, 'Revised lines')
 
   fs.rmSync(path.join(uploadsDir, path.basename(originalImage)), { force: true })
+})
+
+function registrationForm(email) {
+  const form = new FormData()
+  form.set('authorName', 'Rate Limit')
+  form.set('penName', `Writer ${email}`)
+  form.set('email', email)
+  form.set('password', 'secret123')
+  return form
+}
+
+function postForm(title) {
+  const form = new FormData()
+  form.set('category', 'general')
+  form.set('title', title)
+  form.set('body', 'A short test post.')
+  return form
+}
+
+async function loginAs(email, password = 'writer123', headers = {}) {
+  const result = await api('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ email, password }),
+  })
+  assert.equal(result.status, 200)
+  return result.data
+}
+
+test('registration is limited to two accounts per hour per IP', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.50' }
+  for (let index = 1; index <= 2; index += 1) {
+    const response = await api('/api/auth/register', {
+      method: 'POST', headers, body: await withCaptcha(registrationForm(`limited-${index}@example.com`)),
+    })
+    assert.equal(response.status, 201)
+  }
+
+  const blocked = await api('/api/auth/register', {
+    method: 'POST', headers, body: await withCaptcha(registrationForm('limited-3@example.com')),
+  })
+  assert.equal(blocked.status, 429)
+  assert.match(blocked.data.error, /Too many requests/)
+
+  const otherHeaders = { 'X-Forwarded-For': '203.0.113.51' }
+  const anotherIp = await api('/api/auth/register', {
+    method: 'POST',
+    headers: otherHeaders,
+    body: await withCaptcha(registrationForm('limited-other@example.com')),
+  })
+  assert.equal(anotherIp.status, 201)
+})
+
+test('post creation is limited to three posts per fifteen minutes per user/IP', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.60' }
+  const { token } = await loginAs('kalone-ni@writersrealm.local', 'writer123', headers)
+  for (let index = 1; index <= 3; index += 1) {
+    const response = await api('/api/posts', auth(token, {
+      method: 'POST', headers, body: await withCaptcha(postForm(`Rate limited post ${index}`)),
+    }))
+    assert.equal(response.status, 201)
+  }
+
+  const blocked = await api('/api/posts', auth(token, {
+    method: 'POST', headers, body: await withCaptcha(postForm('Rate limited post 4')),
+  }))
+  assert.equal(blocked.status, 429)
+  assert.match(blocked.data.error, /Too many requests/)
+})
+
+test('admins can delete any post and remove spam users', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.70' }
+  const admin = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+  const member = await loginAs('kalone-ni@writersrealm.local', 'writer123', headers)
+  assert.equal(admin.user.isAdmin, true)
+  assert.equal(member.user.isAdmin, false)
+
+  const memberPost = await api('/api/posts', auth(member.token, {
+    method: 'POST', headers, body: await withCaptcha(postForm('Spam post from member')),
+  }))
+  assert.equal(memberPost.status, 201)
+  const adminPost = await api('/api/posts', auth(admin.token, {
+    method: 'POST', headers, body: await withCaptcha(postForm('Post from admin')),
+  }))
+  assert.equal(adminPost.status, 201)
+
+  const denied = await api(`/api/posts/${adminPost.data.post.id}`, auth(member.token, {
+    method: 'DELETE', headers,
+  }))
+  assert.equal(denied.status, 403)
+
+  const removedPost = await api(`/api/posts/${memberPost.data.post.id}`, auth(admin.token, {
+    method: 'DELETE', headers,
+  }))
+  assert.equal(removedPost.status, 200)
+  assert.equal((await api(`/api/posts/${memberPost.data.post.id}`)).status, 404)
+
+  const spam = await api('/api/auth/register', {
+    method: 'POST', headers, body: await withCaptcha(registrationForm('spam-bot@example.com')),
+  })
+  assert.equal(spam.status, 201)
+  assert.equal(spam.data.user.isAdmin, false)
+
+  const deniedUserDelete = await api(`/api/users/${spam.data.user.id}`, auth(member.token, {
+    method: 'DELETE', headers,
+  }))
+  assert.equal(deniedUserDelete.status, 403)
+
+  const removedUser = await api(`/api/users/${spam.data.user.id}`, auth(admin.token, {
+    method: 'DELETE', headers,
+  }))
+  assert.equal(removedUser.status, 200)
+  assert.equal((await api('/api/auth/me', auth(spam.data.token, { headers }))).status, 401)
+})
+
+test('API responses never expose sensitive user fields', async () => {
+  const login = await loginAs('kabya-moe@writersrealm.local')
+  for (const field of ['email', 'password', 'password_hash', 'refresh_token']) {
+    assert.equal(login.user[field], undefined)
+  }
+
+  const payload = JSON.parse(Buffer.from(login.token.split('.')[1], 'base64url').toString())
+  assert.equal(payload.email, undefined)
+  assert.equal(payload.exp - payload.iat, 7 * 24 * 60 * 60)
+
+  const endpoints = [
+    ['/api/auth/me', auth(login.token)],
+    ['/api/posts?limit=5'],
+    ['/api/posts/1'],
+    ['/api/users/featured'],
+    [`/api/users/${login.user.id}`],
+  ]
+  for (const [path, options] of endpoints) {
+    const response = await api(path, options)
+    assert.equal(response.status, 200)
+    const json = JSON.stringify(response.data)
+    for (const field of ['email', 'password', 'password_hash', 'refresh_token']) {
+      assert.equal(json.includes(`"${field}"`), false, `${path} leaked ${field}`)
+    }
+  }
+})
+
+test('post and comment content is sanitized on the server', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.80' }
+  const { token } = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+  const form = new FormData()
+  form.set('category', 'general')
+  form.set('title', '<script>alert(1)</script>Safe title')
+  form.set('body', '<img src=x onerror="stealToken()">Hello &lt;b&gt;world&lt;/b&gt;')
+  await withCaptcha(form)
+  const created = await api('/api/posts', auth(token, { method: 'POST', headers, body: form }))
+  assert.equal(created.status, 201)
+  assert.equal(created.data.post.title, 'alert(1)Safe title')
+  assert.equal(created.data.post.body, 'Hello world')
+  assert.doesNotMatch(JSON.stringify(created.data.post), /<script|onerror|<img/)
+
+  const comment = await api(`/api/posts/${created.data.post.id}/comments`, auth(token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ body: '<iframe src=evil></iframe>Nice writing' }),
+  }))
+  assert.equal(comment.status, 201)
+  assert.equal(comment.data.comment.body, 'Nice writing')
+})
+
+test('captcha, honeypot and spam patterns reject bot submissions', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.90' }
+  const { token } = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+
+  const missing = await api('/api/posts', auth(token, {
+    method: 'POST', headers, body: postForm('No captcha'),
+  }))
+  assert.equal(missing.status, 400)
+  assert.match(missing.data.error, /verification answer/i)
+
+  const trappedForm = await withCaptcha(postForm('Honeypot'))
+  trappedForm.set('website', 'https://spam.example')
+  const trapped = await api('/api/posts', auth(token, {
+    method: 'POST', headers, body: trappedForm,
+  }))
+  assert.equal(trapped.status, 400)
+  assert.match(trapped.data.error, /spam/i)
+
+  const spamForm = await withCaptcha(postForm('Just testing the API'))
+  const spam = await api('/api/posts', auth(token, {
+    method: 'POST', headers, body: spamForm,
+  }))
+  assert.equal(spam.status, 400)
+  assert.match(spam.data.error, /spam/i)
+
+  const botForm = registrationForm('gibberish-bot@example.com')
+  botForm.set('authorName', 'xkjqzwv')
+  const rejected = await api('/api/auth/register', {
+    method: 'POST', headers, body: await withCaptcha(botForm),
+  })
+  assert.equal(rejected.status, 400)
+  assert.match(rejected.data.error, /spam/i)
+})
+
+test('admin can clean legacy spam posts and accounts', async () => {
+  const { db } = await import('../src/db.js')
+  const headers = { 'X-Forwarded-For': '203.0.113.91' }
+  const admin = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+  const memberHeaders = { 'X-Forwarded-For': '203.0.113.92' }
+  const member = await loginAs('kalone-ni@writersrealm.local', 'writer123', memberHeaders)
+
+  const spamUser = await db.prepare(`
+    INSERT INTO users (email, password_hash, author_name, pen_name, bio)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('legacy-spam@example.com', 'hash', 'xkjqzwv', 'qwertyuiop', '')
+  const spamPost = await db.prepare(`
+    INSERT INTO posts (user_id, category, title, body) VALUES (?, ?, ?, ?)
+  `).run(spamUser.lastInsertRowid, 'general', 'Lorem ipsum', 'Lorem ipsum dolor sit amet')
+  const cleanPost = await db.prepare(`
+    INSERT INTO posts (user_id, category, title, body) VALUES (?, ?, ?, ?)
+  `).run(admin.user.id, 'general', 'Keep me', 'A real post')
+
+  const denied = await api('/api/admin/spam', auth(member.token, {
+    method: 'DELETE', headers: memberHeaders,
+  }))
+  assert.equal(denied.status, 403)
+
+  const cleaned = await api('/api/admin/spam', auth(admin.token, {
+    method: 'DELETE', headers,
+  }))
+  assert.equal(cleaned.status, 200)
+  assert.equal(cleaned.data.deletedPosts, 1)
+  assert.ok(cleaned.data.deletedUsers >= 1)
+  assert.equal((await api(`/api/posts/${spamPost.lastInsertRowid}`)).status, 404)
+  assert.equal((await api(`/api/posts/${cleanPost.lastInsertRowid}`)).status, 200)
+})
+
+test('helmet security headers are present without breaking CORS', async () => {
+  const response = await fetch(`${base}/api/health`)
+  assert.match(response.headers.get('content-security-policy') || '', /default-src 'self'/)
+  assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN')
+  assert.equal(response.headers.get('cross-origin-resource-policy'), 'cross-origin')
+
+  const corsResponse = await fetch(`${base}/api/health`, { headers: { Origin: 'http://localhost:5173' } })
+  assert.equal(corsResponse.headers.get('access-control-allow-origin'), 'http://localhost:5173')
 })

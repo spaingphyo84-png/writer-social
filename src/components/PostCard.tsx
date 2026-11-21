@@ -121,6 +121,15 @@ export default function PostCard({ post, onDeleted, onUpdated, onRepost }: PostC
           </div>
           <div className="flex items-center gap-1">
             <CategoryTag category={post.category} />
+            {user?.isAdmin && (
+              <button
+                type="button"
+                onClick={remove}
+                className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 transition hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> {t('post.adminDelete')}
+              </button>
+            )}
             <div className="relative">
               <button type="button" onClick={() => setMoreOpen((open) => !open)} aria-label={t('post.more')} className="icon-btn !h-8 !w-8">
                 <MoreHorizontal className="h-[18px] w-[18px]" />

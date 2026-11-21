@@ -50,8 +50,15 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   return payload as T
 }
 
+export interface CaptchaChallenge {
+  captchaId: string
+  question: string
+  expiresIn: number
+}
+
 export const api = {
   me: () => apiFetch<{ user: User }>('/auth/me'),
+  captcha: () => apiFetch<CaptchaChallenge>('/auth/captcha'),
   login: (email: string, password: string) => apiFetch<AuthResponse>('/auth/login', {
     method: 'POST', body: JSON.stringify({ email, password }),
   }),
@@ -78,6 +85,9 @@ export const api = {
     method: 'POST', body: JSON.stringify({ body }),
   }),
   deleteComment: (postId: number, commentId: number) => apiFetch<{ success: boolean }>(`/posts/${postId}/comments/${commentId}`, {
+    method: 'DELETE',
+  }),
+  cleanSpam: () => apiFetch<{ success: boolean; deletedPosts: number; deletedUsers: number }>('/admin/spam', {
     method: 'DELETE',
   }),
   share: (id: number, kind: 'link' | 'repost') => apiFetch<{ repost: Post | null; shareCount: number }>(`/posts/${id}/share`, {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpRight, Feather, Search, SlidersHorizontal, X } from 'lucide-react'
+import { ArrowUpRight, Feather, Search, ShieldAlert, SlidersHorizontal, X } from 'lucide-react'
 import { api } from './api'
 import AuthModal from './components/AuthModal'
 import Composer from './components/Composer'
@@ -42,6 +42,8 @@ export default function App() {
   const [writers, setWriters] = useState<Writer[]>([])
   const [trends, setTrends] = useState<Trend[]>([])
   const [loading, setLoading] = useState(true)
+  const [feedVersion, setFeedVersion] = useState(0)
+  const [cleaningSpam, setCleaningSpam] = useState(false)
   const [focusSignal, setFocusSignal] = useState(0)
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
@@ -58,7 +60,7 @@ export default function App() {
       .catch(() => { if (active) toast(t('common.error'), 'error') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [filter, authorFilter, t, toast])
+  }, [filter, authorFilter, feedVersion, t, toast])
 
   const visiblePosts = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -100,6 +102,21 @@ export default function App() {
     setPosts((current) => current.map((item) => (item.id === post.id ? post : item)))
     if (filter !== 'all' && post.category !== filter) setFilter('all')
     api.trending().then((result) => setTrends(result.trending)).catch(() => undefined)
+  }
+
+  async function cleanSpam() {
+    setCleaningSpam(true)
+    try {
+      const result = await api.cleanSpam()
+      toast(t('admin.spamCleaned', { posts: result.deletedPosts, users: result.deletedUsers }))
+      setFeedVersion((value) => value + 1)
+      api.featuredWriters().then((data) => setWriters(data.writers)).catch(() => undefined)
+      api.trending().then((data) => setTrends(data.trending)).catch(() => undefined)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('common.error'), 'error')
+    } finally {
+      setCleaningSpam(false)
+    }
   }
 
   const selectedWriter = writers.find((writer) => writer.id === authorFilter)
@@ -156,9 +173,16 @@ export default function App() {
                 <p className="mt-1 text-xs text-ink-700/55 dark:text-parchment-200/45">{t(feedSubtitles[filter])}</p>
               )}
             </div>
-            <span className="hidden shrink-0 items-center gap-1 text-[11px] font-semibold text-ink-700/45 dark:text-parchment-200/40 sm:flex">
-              <SlidersHorizontal className="h-3.5 w-3.5" /> {t('feed.newest')}
-            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              {user?.isAdmin && (
+                <button type="button" onClick={() => void cleanSpam()} disabled={cleaningSpam} className="btn-secondary !py-2 text-[11px] !text-red-600 dark:!text-red-400">
+                  <ShieldAlert className="h-3.5 w-3.5" /> {t('admin.cleanSpam')}
+                </button>
+              )}
+              <span className="hidden items-center gap-1 text-[11px] font-semibold text-ink-700/45 dark:text-parchment-200/40 sm:flex">
+                <SlidersHorizontal className="h-3.5 w-3.5" /> {t('feed.newest')}
+              </span>
+            </div>
           </div>
 
           <Composer onCreated={handleCreated} focusSignal={focusSignal} focusRef={composerRef} />

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
-import { BookOpen, Feather, ImagePlus, Layers3, Loader2, PenLine, X } from 'lucide-react'
-import { api } from '../api'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { BookOpen, Feather, ImagePlus, Layers3, Loader2, PenLine, RefreshCw, X } from 'lucide-react'
+import { api, type CaptchaChallenge } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useLocale } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
@@ -35,9 +35,24 @@ export default function Composer({ onCreated, focusSignal, focusRef }: ComposerP
   const [body, setBody] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null)
+  const [captchaAnswer, setCaptchaAnswer] = useState('')
   const [expanded, setExpanded] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  const loadCaptcha = useCallback(async () => {
+    try {
+      setCaptcha(await api.captcha())
+      setCaptchaAnswer('')
+    } catch {
+      setCaptcha(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (expanded && user) void loadCaptcha()
+  }, [expanded, user, loadCaptcha])
 
   useEffect(() => {
     if (!preview) return
@@ -97,6 +112,9 @@ export default function Composer({ onCreated, focusSignal, focusRef }: ComposerP
       data.set('category', category)
       data.set('title', title.trim())
       data.set('body', body.trim())
+      data.set('captchaId', captcha?.captchaId ?? '')
+      data.set('captchaAnswer', captchaAnswer.trim())
+      data.set('website', '')
       if (file) data.set('image', file)
       const result = await api.createPost(data)
       onCreated(result.post)
@@ -106,6 +124,7 @@ export default function Composer({ onCreated, focusSignal, focusRef }: ComposerP
       toast(error instanceof Error ? error.message : t('common.error'), 'error')
     } finally {
       setSubmitting(false)
+      void loadCaptcha()
     }
   }
 
@@ -161,6 +180,18 @@ export default function Composer({ onCreated, focusSignal, focusRef }: ComposerP
             className="input resize-y leading-relaxed"
           />
 
+          <div className="mt-3 rounded-xl border border-dashed border-parchment-300 p-3 dark:border-ink-700">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-ink-700/60 dark:text-parchment-200/55">{t('auth.captchaLabel')}</p>
+              <button type="button" onClick={() => void loadCaptcha()} className="btn-ghost !py-1 text-[11px]">
+                <RefreshCw className="h-3 w-3" /> {t('auth.refreshCaptcha')}
+              </button>
+            </div>
+            <label className="label mt-2" htmlFor="post-captcha">{captcha?.question ?? t('common.loading')}</label>
+            <input id="post-captcha" className="input" inputMode="numeric" value={captchaAnswer} onChange={(event) => setCaptchaAnswer(event.target.value)} required />
+          </div>
+          <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
+
           {preview && (
             <div className="relative mt-3 overflow-hidden rounded-xl border border-parchment-200 dark:border-ink-700">
               <img src={preview} alt={t('post.imageAlt')} className="max-h-64 w-full object-cover" />
@@ -188,7 +219,7 @@ export default function Composer({ onCreated, focusSignal, focusRef }: ComposerP
             <span className="hidden text-[11px] text-ink-700/45 dark:text-parchment-200/40 sm:inline">{t('composer.hint')}</span>
             <div className="ml-auto flex items-center gap-2">
               <button type="button" onClick={() => setExpanded(false)} className="btn-ghost !py-2 text-xs">{t('common.cancel')}</button>
-              <button type="button" onClick={submit} disabled={submitting || !title.trim() || !body.trim()} className="btn-primary !py-2 text-xs">
+              <button type="button" onClick={submit} disabled={submitting || !title.trim() || !body.trim() || !captchaAnswer.trim()} className="btn-primary !py-2 text-xs">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
                 {submitting ? t('composer.publishing') : t('composer.publish')}
               </button>

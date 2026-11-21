@@ -1,4 +1,5 @@
 import { t } from './messages.js'
+import { containsSpam, isGibberishName } from './spam.js'
 
 export const CATEGORIES = ['poem', 'story', 'general']
 export const REACTIONS = ['love', 'haha', 'sad']
@@ -14,8 +15,34 @@ export function langFromRequest(req) {
   return /^my\b/i.test(header) ? 'my' : 'en'
 }
 
+const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+const ENTITY_PATTERN = /&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi
+
+function decodeEntity(match, code) {
+  const name = code.toLowerCase()
+  if (name.startsWith('#x') || name.startsWith('#')) {
+    const point = name.startsWith('#x') ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10)
+    return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : ''
+  }
+  return HTML_ENTITIES[name] ?? match
+}
+
+export function sanitizeText(value) {
+  let text = String(value ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+  for (let pass = 0; pass < 3; pass += 1) {
+    const decoded = text.replace(ENTITY_PATTERN, decodeEntity)
+    if (decoded === text) break
+    text = decoded
+  }
+  return text
+    .replace(/<!--[\s\S]*?-->/gi, '')
+    .replace(/<![a-z][^>]*>/gi, '')
+    .replace(/<\/?[a-z][^>]*>/gi, '')
+    .trim()
+}
+
 export function cleanText(value, maxLength = 20000) {
-  return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
+  return typeof value === 'string' ? sanitizeText(value).slice(0, maxLength) : ''
 }
 
 export function isVideoFile(file) {
@@ -46,6 +73,9 @@ export function validateRegister(body, lang = 'en') {
   if (!authorName || !penName || !email || !password) return { error: t(lang, 'missing_fields') }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: t(lang, 'invalid_email') }
   if (password.length < 6) return { error: t(lang, 'password_short') }
+  if (isGibberishName(authorName) || isGibberishName(penName) || containsSpam(bio)) {
+    return { error: t(lang, 'spam_detected') }
+  }
   return { value: { authorName, penName, email, password, bio } }
 }
 
@@ -54,6 +84,9 @@ export function validateProfile(body, lang = 'en') {
   const penName = cleanText(body.penName ?? body.pen_name, 80)
   const bio = cleanText(body.bio, 1000)
   if (!authorName || !penName) return { error: t(lang, 'missing_fields') }
+  if (isGibberishName(authorName) || isGibberishName(penName) || containsSpam(bio)) {
+    return { error: t(lang, 'spam_detected') }
+  }
   return { value: { authorName, penName, bio } }
 }
 
@@ -71,6 +104,7 @@ export function validatePost(body, lang = 'en') {
   if (!postBody) return { error: t(lang, 'body_required') }
   if (String(body.title ?? '').trim().length > 200) return { error: t(lang, 'title_too_long') }
   if (String(body.body ?? body.content ?? '').trim().length > 20000) return { error: t(lang, 'body_too_long') }
+  if (containsSpam(title) || containsSpam(postBody)) return { error: t(lang, 'spam_detected') }
   return { value: { category, title, body: postBody } }
 }
 
@@ -98,6 +132,8 @@ export function validatePostUpdate(body, lang = 'en') {
     value.body = postBody
   }
 
+  if (containsSpam(value.title) || containsSpam(value.body)) return { error: t(lang, 'spam_detected') }
+
   if (body.removeImage === true || body.removeImage === 'true' || body.removeImage === '1') {
     value.removeImage = true
   }
@@ -115,5 +151,6 @@ export function validateComment(body, lang = 'en') {
   const comment = cleanText(body.body, 1000)
   if (!comment) return { error: t(lang, 'comment_required') }
   if (String(body.body ?? '').trim().length > 1000) return { error: t(lang, 'comment_too_long') }
+  if (containsSpam(comment)) return { error: t(lang, 'spam_detected') }
   return { value: { body: comment } }
 }
