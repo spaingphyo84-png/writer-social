@@ -29,6 +29,12 @@ const en = {
   spam_detected: 'This looks like spam. Please remove suspicious links or random text.',
   registration_closed: 'New registrations are temporarily paused by admin.',
   cannot_delete_self: 'You cannot delete your own account.',
+  cannot_follow_self: 'You cannot follow yourself.',
+  user_not_found: 'This writer could not be found.',
+  feedback_required: 'Please write your suggestion or bug report.',
+  feedback_too_long: 'Feedback is too long (maximum 2,000 characters).',
+  invalid_feedback_category: 'Please choose a valid feedback category.',
+  feedback_not_found: 'This feedback could not be found.',
   server_error: 'Something went wrong. Please try again.',
 }
 
@@ -63,6 +69,12 @@ const my = {
   spam_detected: 'ဒါက spam လို ဖြစ်နေပါတယ်။ သံသယဖြစ်ဖွယ် စာသားတွေ ဖယ်ရှားပေးပါ။',
   registration_closed: 'အကောင့်အသစ်ဖွင့်ခွင့်ကို ယာယီရပ်ထားပါသည်။ နည်းနည်းစောင့်ပြီး ထပ်ကြိုးစားပါ။',
   cannot_delete_self: 'သင့်အကောင့်ကိုယ်တိုင် ဖျက်လို့မရပါ။',
+  cannot_follow_self: 'သင့်ကိုယ်သင် လိုက်နာလို့မရပါ။',
+  user_not_found: 'ဒီစာရေးဆရာကို မတွေ့ရှိပါ။',
+  feedback_required: 'အကြံပြုချက် သို့မဟုတ် ချို့ယွင်းချက်ကို ရေးသားပေးပါ။',
+  feedback_too_long: 'အကြံပြုချက် အလျားလွန်နေပါသည် (အမြင့်ဆုံး စာလုံး ၂,၀၀၀)။',
+  invalid_feedback_category: 'မှန်ကန်သော အကြံပြုချက် အမျိုးအစား ရွေးပေးပါ။',
+  feedback_not_found: 'ဒီအကြံပြုချက်ကို မတွေ့ရှိပါ။',
   server_error: 'တစ်ခုခု မှားယွင်းနေပါသည်။ ထပ်ကြိုးစားပေးပါ။',
 }
 

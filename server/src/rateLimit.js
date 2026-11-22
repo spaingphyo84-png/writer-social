@@ -72,6 +72,13 @@ export const createPostRateLimit = createRateLimit({
   key: (req) => `${clientIp(req)}:${req.user?.id ?? 'anonymous'}`,
 })
 
+export const feedbackRateLimit = createRateLimit({
+  prefix: 'feedback',
+  max: 3,
+  windowMs: HOUR,
+  key: (req) => String(req.user?.id ?? ''),
+})
+
 export function resetRateLimits() {
   buckets.clear()
 }

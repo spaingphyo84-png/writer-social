@@ -1,7 +1,5 @@
 import { before, after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import path from 'node:path'
 
 const ADMIN_EMAIL = 'owner-test@writersrealm.local'
 const ADMIN_PASSWORD = 'owner-strong-password-123'
@@ -10,7 +8,6 @@ process.env.WRITERS_REALM_DB = ':memory:'
 process.env.ADMIN_EMAILS = ADMIN_EMAIL
 
 const { default: app } = await import('../src/app.js')
-const { uploadsDir } = await import('../src/upload.js')
 
 let server
 let base
@@ -206,7 +203,7 @@ test('image post, reactions, comments and share flows work', async () => {
   assert.equal(created.status, 201)
   const post = created.data.post
   assert.equal(post.category, 'poem')
-  assert.ok(post.imageUrl?.startsWith('/uploads/'))
+  assert.ok(post.imageUrl?.startsWith('data:image/png;base64,'))
 
   const loved = await api(`/api/posts/${post.id}/react`, auth(token, {
     method: 'POST',
@@ -257,8 +254,6 @@ test('image post, reactions, comments and share flows work', async () => {
 
   const filtered = await api('/api/posts?category=general')
   assert.ok(filtered.data.posts.every((item) => item.category === 'general'))
-
-  fs.rmSync(path.join(uploadsDir, path.basename(post.imageUrl)), { force: true })
 })
 
 test('authors can edit their own posts and remove images', async () => {
@@ -321,8 +316,6 @@ test('authors can edit their own posts and remove images', async () => {
   const fetched = await api(`/api/posts/${post.id}`)
   assert.equal(fetched.data.post.category, 'story')
   assert.equal(fetched.data.post.body, 'Revised lines')
-
-  fs.rmSync(path.join(uploadsDir, path.basename(originalImage)), { force: true })
 })
 
 function registrationForm(email) {

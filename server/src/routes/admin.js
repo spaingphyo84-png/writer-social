@@ -11,6 +11,39 @@ const router = Router()
 
 router.delete('/users/:id', requireAuth, requireAdmin, deleteUser)
 
+router.get('/feedback', requireAuth, requireAdmin, async (_req, res) => {
+  const rows = await db.prepare(`
+    SELECT f.id, f.category, f.message, f.created_at,
+           u.id AS user_id, u.author_name, u.pen_name, u.avatar_url
+    FROM feedback f JOIN users u ON u.id = f.user_id
+    ORDER BY f.created_at DESC, f.id DESC LIMIT 200
+  `).all()
+  const feedback = rows.map((row) => ({
+    id: row.id,
+    category: row.category,
+    message: row.message,
+    createdAt: row.created_at,
+    user: {
+      id: row.user_id,
+      authorName: row.author_name,
+      penName: row.pen_name,
+      avatarUrl: row.avatar_url ?? null,
+    },
+  }))
+  res.json({ feedback })
+})
+
+router.delete('/feedback/:id', requireAuth, requireAdmin, async (req, res) => {
+  const lang = langFromRequest(req)
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(404).json({ error: t(lang, 'feedback_not_found') })
+  }
+  const result = await db.prepare('DELETE FROM feedback WHERE id = ?').run(id)
+  if (!result.changes) return res.status(404).json({ error: t(lang, 'feedback_not_found') })
+  res.json({ success: true })
+})
+
 router.get('/registration-status', requireAuth, requireAdmin, (_req, res) => {
   res.json({ registrationOpen: isRegistrationOpen() })
 })

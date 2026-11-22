@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.js'
 import userRoutes from './routes/users.js'
 import adminRoutes from './routes/admin.js'
 import postRoutes from './routes/posts.js'
+import feedbackRoutes from './routes/feedback.js'
 import { uploadErrorHandler, uploadsDir } from './upload.js'
 import { langFromRequest } from './validation.js'
 import { t } from './messages.js'
@@ -82,6 +83,7 @@ export function createApp() {
   app.use('/api/users', userRoutes)
   app.use('/api/admin', adminRoutes)
   app.use('/api/posts', postRoutes)
+  app.use('/api/feedback', feedbackRoutes)
   app.use('/api', (_req, res) => res.status(404).json({ error: t(langFromRequest(_req), 'not_found') }))
 
   app.use(uploadErrorHandler)

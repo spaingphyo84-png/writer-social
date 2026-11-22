@@ -1,23 +1,25 @@
-import { BookOpen, Feather, Home, Layers3, PenLine, Users } from 'lucide-react'
+import { Bookmark, BookOpen, Feather, Home, Layers3, PenLine, UserCheck, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useLocale } from '../context/SettingsContext'
-import type { FeedFilter, TranslationKey } from '../i18n'
+import type { FeedView, TranslationKey } from '../i18n'
 import type { Trend } from '../types'
 import { Avatar } from './Common'
 
 interface LeftSidebarProps {
-  filter: FeedFilter
-  onFilterChange: (filter: FeedFilter) => void
+  filter: FeedView
+  onFilterChange: (filter: FeedView) => void
   onWrite: () => void
   trends: Trend[]
 }
 
-const items: { key: FeedFilter; label: TranslationKey; icon: LucideIcon; accent: string }[] = [
+const items: { key: FeedView; label: TranslationKey; icon: LucideIcon; accent: string; private?: boolean }[] = [
   { key: 'all', label: 'nav.home', icon: Home, accent: 'text-terracotta-500' },
   { key: 'poem', label: 'nav.poems', icon: Feather, accent: 'text-rose-500' },
   { key: 'story', label: 'nav.stories', icon: BookOpen, accent: 'text-emerald-600' },
   { key: 'general', label: 'nav.general', icon: Layers3, accent: 'text-sky-600' },
+  { key: 'following', label: 'nav.following', icon: UserCheck, accent: 'text-violet-600', private: true },
+  { key: 'saved', label: 'nav.saved', icon: Bookmark, accent: 'text-amber-600', private: true },
 ]
 
 export default function LeftSidebar({ filter, onFilterChange, onWrite, trends }: LeftSidebarProps) {
@@ -32,7 +34,7 @@ export default function LeftSidebar({ filter, onFilterChange, onWrite, trends }:
           <p className="px-3 pb-2 pt-2 text-[10px] font-bold uppercase tracking-[0.16em] text-ink-700/45 dark:text-parchment-200/40">
             {t('nav.categories')}
           </p>
-          {items.map(({ key, label, icon: Icon, accent }) => {
+          {items.filter((item) => !item.private || user).map(({ key, label, icon: Icon, accent }) => {
             const active = filter === key
             return (
               <button
@@ -45,7 +47,7 @@ export default function LeftSidebar({ filter, onFilterChange, onWrite, trends }:
               >
                 <Icon className={`h-[18px] w-[18px] ${active ? 'text-terracotta-500 dark:text-gold-400' : accent}`} />
                 <span className="flex-1">{t(label)}</span>
-                {key !== 'all' && <span className="text-[11px] font-semibold opacity-50">{countFor(key)}</span>}
+                {['poem', 'story', 'general'].includes(key) && <span className="text-[11px] font-semibold opacity-50">{countFor(key)}</span>}
               </button>
             )
           })}

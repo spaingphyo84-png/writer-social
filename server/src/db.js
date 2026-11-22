@@ -72,11 +72,37 @@ const SCHEMA_SQL = `
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS follows (
+      follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      following_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (follower_id, following_id),
+      CHECK (follower_id <> following_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, post_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category TEXT NOT NULL CHECK (category IN ('suggestion', 'bug', 'other')),
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
   CREATE INDEX IF NOT EXISTS idx_posts_category_created ON posts(category, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);
   CREATE INDEX IF NOT EXISTS idx_reactions_post ON reactions(post_id);
   CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
   CREATE INDEX IF NOT EXISTS idx_shares_post ON shares(post_id);
+  CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id);
+  CREATE INDEX IF NOT EXISTS idx_bookmarks_post ON bookmarks(post_id);
+  CREATE INDEX IF NOT EXISTS idx_feedback_user_created ON feedback(user_id, created_at DESC);
 `
 
 function toPostgres(sql) {

@@ -1,5 +1,5 @@
 import { resolveAppUrl } from './config'
-import type { AuthResponse, Comment, Post, Trend, User, Writer } from './types'
+import type { AuthResponse, Comment, FeedbackEntry, Post, Trend, User, Writer } from './types'
 
 export const TOKEN_KEY = 'writers-realm-token'
 export const LOCALE_KEY = 'writers-realm-locale'
@@ -70,11 +70,17 @@ export const api = {
   updateProfile: (data: FormData) => apiFetch<{ user: User }>('/users/me', { method: 'PATCH', body: data }),
   featuredWriters: () => apiFetch<{ writers: Writer[] }>('/users/featured'),
   trending: () => apiFetch<{ trending: Trend[] }>('/users/trending'),
-  posts: (params: { category?: string; authorId?: number; limit?: number } = {}) => {
+  userProfile: (id: number) => apiFetch<{ user: User }>(`/users/${id}`),
+  followUser: (id: number) => apiFetch<{ followers: number; following: number; isFollowing: boolean }>(`/users/${id}/follow`, {
+    method: 'POST',
+  }),
+  posts: (params: { category?: string; authorId?: number; limit?: number; q?: string; feed?: 'following' | 'saved' } = {}) => {
     const query = new URLSearchParams()
     if (params.category && params.category !== 'all') query.set('category', params.category)
     if (params.authorId) query.set('authorId', String(params.authorId))
     if (params.limit) query.set('limit', String(params.limit))
+    if (params.q?.trim()) query.set('q', params.q.trim())
+    if (params.feed) query.set('feed', params.feed)
     const suffix = query.toString()
     return apiFetch<{ posts: Post[] }>(`/posts${suffix ? `?${suffix}` : ''}`)
   },
@@ -91,10 +97,18 @@ export const api = {
   deleteComment: (postId: number, commentId: number) => apiFetch<{ success: boolean }>(`/posts/${postId}/comments/${commentId}`, {
     method: 'DELETE',
   }),
+  bookmarkPost: (id: number) => apiFetch<{ bookmarked: boolean; count: number }>(`/posts/${id}/bookmark`, {
+    method: 'POST',
+  }),
   cleanSpam: () => apiFetch<{ success: boolean; deletedPosts: number; deletedUsers: number }>('/admin/spam', {
     method: 'DELETE',
   }),
   share: (id: number, kind: 'link' | 'repost') => apiFetch<{ repost: Post | null; shareCount: number }>(`/posts/${id}/share`, {
     method: 'POST', body: JSON.stringify({ kind }),
   }),
+  submitFeedback: (category: string, message: string) => apiFetch<{ feedback: FeedbackEntry }>('/feedback', {
+    method: 'POST', body: JSON.stringify({ category, message }),
+  }),
+  adminFeedback: () => apiFetch<{ feedback: FeedbackEntry[] }>('/admin/feedback'),
+  deleteFeedback: (id: number) => apiFetch<{ success: boolean }>(`/admin/feedback/${id}`, { method: 'DELETE' }),
 }

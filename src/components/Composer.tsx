@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext'
 import type { Category } from '../i18n'
 import type { Post } from '../types'
 import { Avatar, PenBadge } from './Common'
+import { compressImage } from '../utils'
 
 const categories: { key: Category; icon: typeof Feather; active: string }[] = [
   { key: 'poem', icon: Feather, active: 'text-rose-600 border-rose-500 dark:text-rose-400' },
@@ -77,7 +78,7 @@ export default function Composer({ onCreated, focusSignal, focusRef }: ComposerP
     if (fileInput.current) fileInput.current.value = ''
   }
 
-  function handleFile(selected: File | undefined) {
+  async function handleFile(selected: File | undefined) {
     if (!selected) return
     const name = selected.name.toLowerCase()
     const isVideo = selected.type.startsWith('video/') || /\.(mp4|mov|webm|avi|mkv|m4v|ogv|3gp|wmv|flv)$/.test(name)
@@ -93,8 +94,9 @@ export default function Composer({ onCreated, focusSignal, focusRef }: ComposerP
       toast(t('file.tooLarge'), 'error')
       return
     }
-    setFile(selected)
-    setPreview(URL.createObjectURL(selected))
+    const compressed = await compressImage(selected)
+    setFile(compressed)
+    setPreview(URL.createObjectURL(compressed))
   }
 
   async function submit() {

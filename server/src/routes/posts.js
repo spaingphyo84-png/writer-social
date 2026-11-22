@@ -3,10 +3,11 @@ import { db } from '../db.js'
 import { requireAuth, optionalAuth } from '../auth.js'
 import {
   validatePost, validatePostUpdate, validateReaction, validateComment,
-  CATEGORIES, langFromRequest,
+  CATEGORIES, langFromRequest, searchTerm,
 } from '../validation.js'
 import { t } from '../messages.js'
-import { requireValidImageBuffer, uploadPostImage, saveUpload } from '../upload.js'
+import { requireValidImageBuffer, uploadPostImage } from '../upload.js'
+import { storeImage } from '../media.js'
 import { createPostRateLimit } from '../rateLimit.js'
 import { requireCaptcha } from '../captcha.js'
 
@@ -20,6 +21,7 @@ const POST_COLUMNS = `
   (SELECT COUNT(*) FROM reactions r WHERE r.post_id = p.id AND r.type = 'sad') AS sad_count,
   (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
   (SELECT COUNT(*) FROM shares s WHERE s.post_id = p.id) AS share_count,
+  (SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = ?) AS bookmarked,
   (SELECT r.type FROM reactions r WHERE r.post_id = p.id AND r.user_id = ?) AS viewer_reaction,
   rp.title AS repost_title, rp.user_id AS repost_user_id,
   ru.author_name AS repost_author_name, ru.pen_name AS repost_pen_name
@@ -55,6 +57,7 @@ function mapPost(row) {
       shares: row.share_count,
     },
     viewerReaction: row.viewer_reaction ?? null,
+    bookmarked: Boolean(row.bookmarked),
     repost: row.repost_of ? {
       id: row.repost_of,
       title: row.repost_title,
@@ -77,7 +80,7 @@ async function reactionCounts(postId, viewerId = null) {
 }
 
 async function getPost(id, viewerId = null) {
-  const row = await db.prepare(`SELECT ${POST_COLUMNS} ${POST_FROM} WHERE p.id = ?`).get(viewerId, id)
+  const row = await db.prepare(`SELECT ${POST_COLUMNS} ${POST_FROM} WHERE p.id = ?`).get(viewerId, viewerId, id)
   return row ? mapPost(row) : null
 }
 
@@ -89,18 +92,42 @@ function validId(value) {
 router.get('/', optionalAuth, async (req, res) => {
   const viewerId = req.user?.id ?? null
   const where = []
-  const params = [viewerId]
+  const params = [viewerId, viewerId]
 
   const category = String(req.query.category ?? 'all')
   if (CATEGORIES.includes(category)) {
     where.push('p.category = ?')
     params.push(category)
   }
+
+  const term = searchTerm(req.query.q)
+  if (term) {
+    where.push(`(
+      LOWER(p.title) LIKE ? ESCAPE '\\'
+      OR LOWER(p.body) LIKE ? ESCAPE '\\'
+      OR LOWER(u.pen_name) LIKE ? ESCAPE '\\'
+      OR LOWER(u.author_name) LIKE ? ESCAPE '\\'
+    )`)
+    params.push(term, term, term, term)
+  }
+
   const authorId = validId(req.query.authorId)
   if (authorId) {
     where.push('p.user_id = ?')
     params.push(authorId)
   }
+
+  const feed = String(req.query.feed ?? '')
+  if (feed === 'following' || feed === 'saved') {
+    if (!req.user) return res.status(401).json({ error: t(langFromRequest(req), 'unauthorized') })
+    if (feed === 'following') {
+      where.push('EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = ? AND f.following_id = p.user_id)')
+    } else {
+      where.push('EXISTS (SELECT 1 FROM bookmarks b WHERE b.user_id = ? AND b.post_id = p.id)')
+    }
+    params.push(req.user.id)
+  }
+
   const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100)
 
   const rows = await db.prepare(`
@@ -123,7 +150,7 @@ router.post('/', requireAuth, createPostRateLimit, uploadPostImage, requireValid
   const result = validatePost(req.body, lang)
   if (result.error) return res.status(400).json({ error: result.error })
   const { category, title, body: postBody } = result.value
-  const imageUrl = saveUpload(req.file)
+  const imageUrl = await storeImage(req.file, lang)
 
   const info = await db.prepare(`
     INSERT INTO posts (user_id, category, title, body, image_url) VALUES (?, ?, ?, ?, ?)
@@ -149,7 +176,7 @@ const updatePost = async (req, res) => {
   if (category !== undefined) { columns.push('category = ?'); params.push(category) }
   if (req.file || removeImage) {
     columns.push('image_url = ?')
-    params.push(req.file ? saveUpload(req.file) : null)
+    params.push(req.file ? await storeImage(req.file, lang) : null)
   }
 
   if (columns.length) {
@@ -195,6 +222,23 @@ router.post('/:id/react', requireAuth, async (req, res) => {
   })
   await toggle()
   res.json({ counts: await reactionCounts(id, req.user.id) })
+})
+
+router.post('/:id/bookmark', requireAuth, async (req, res) => {
+  const lang = langFromRequest(req)
+  const id = validId(req.params.id)
+  if (!id || !(await db.prepare('SELECT id FROM posts WHERE id = ?').get(id))) {
+    return res.status(404).json({ error: t(lang, 'post_not_found') })
+  }
+
+  const current = await db.prepare('SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?').get(req.user.id, id)
+  if (current) {
+    await db.prepare('DELETE FROM bookmarks WHERE user_id = ? AND post_id = ?').run(req.user.id, id)
+  } else {
+    await db.prepare('INSERT INTO bookmarks (user_id, post_id) VALUES (?, ?)').run(req.user.id, id)
+  }
+  const count = (await db.prepare('SELECT COUNT(*) AS count FROM bookmarks WHERE post_id = ?').get(id)).count
+  res.json({ bookmarked: !current, count })
 })
 
 router.get('/:id/comments', async (req, res) => {

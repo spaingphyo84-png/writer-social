@@ -35,6 +35,7 @@ export interface Post {
   author: Author
   counts: PostCounts
   viewerReaction: ReactionType | null
+  bookmarked: boolean
   repost: PostRepostInfo | null
 }
 
@@ -49,6 +50,17 @@ export interface User extends Author {
   bio: string
   createdAt: string
   isAdmin: boolean
+  followers?: number
+  following?: number
+  isFollowing?: boolean
+}
+
+export interface FeedbackEntry {
+  id: number
+  category: 'suggestion' | 'bug' | 'other'
+  message: string
+  createdAt: string
+  user: Pick<Author, 'id' | 'authorName' | 'penName' | 'avatarUrl'>
 }
 
 export interface Writer extends User {

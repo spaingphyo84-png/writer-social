@@ -1,9 +1,10 @@
 import { Router } from 'express'
 import { db } from '../db.js'
-import { requireAuth, requireAdmin, publicUser, PUBLIC_USER_COLUMNS } from '../auth.js'
+import { requireAuth, requireAdmin, optionalAuth, publicUser, PUBLIC_USER_COLUMNS } from '../auth.js'
 import { validateProfile, langFromRequest } from '../validation.js'
 import { t } from '../messages.js'
-import { requireValidImageBuffer, uploadAvatar, saveUpload } from '../upload.js'
+import { requireValidImageBuffer, uploadAvatar } from '../upload.js'
+import { storeImage } from '../media.js'
 
 const router = Router()
 
@@ -21,6 +22,25 @@ async function statsFor(userId) {
         SELECT COUNT(*) AS count FROM reactions r JOIN posts p ON p.id = r.post_id WHERE p.user_id = ?
       ) r) AS reactions
   `).get(userId, userId, userId)
+}
+
+async function socialFor(userId, viewerId = null) {
+  const row = await db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM follows WHERE following_id = ?) AS followers,
+      (SELECT COUNT(*) FROM follows WHERE follower_id = ?) AS following,
+      (SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?) AS is_following
+  `).get(userId, userId, viewerId, userId)
+  return {
+    followers: row.followers,
+    following: row.following,
+    isFollowing: Boolean(row.is_following),
+  }
+}
+
+function validId(value) {
+  const id = Number(value)
+  return Number.isInteger(id) && id > 0 ? id : null
 }
 
 router.get('/featured', async (_req, res) => {
@@ -49,7 +69,7 @@ router.patch('/me', requireAuth, uploadAvatar, requireValidImageBuffer, async (r
   const result = validateProfile(req.body, lang)
   if (result.error) return res.status(400).json({ error: result.error })
   const { authorName, penName, bio } = result.value
-  const avatarUrl = req.file ? saveUpload(req.file) : req.user.avatar_url
+  const avatarUrl = req.file ? await storeImage(req.file, lang) : req.user.avatar_url
   await db.prepare(`
     UPDATE users SET author_name = ?, pen_name = ?, bio = ?, avatar_url = ? WHERE id = ?
   `).run(authorName, penName, bio, avatarUrl, req.user.id)
@@ -57,12 +77,32 @@ router.patch('/me', requireAuth, uploadAvatar, requireValidImageBuffer, async (r
   res.json({ user: publicUser(user) })
 })
 
-router.get('/:id', async (req, res) => {
-  const id = Number(req.params.id)
-  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: t(langFromRequest(req), 'not_found') })
+router.post('/:id/follow', requireAuth, async (req, res) => {
+  const lang = langFromRequest(req)
+  const id = validId(req.params.id)
+  if (!id) return res.status(404).json({ error: t(lang, 'user_not_found') })
+  if (id === req.user.id) return res.status(400).json({ error: t(lang, 'cannot_follow_self') })
+  if (!(await db.prepare('SELECT id FROM users WHERE id = ?').get(id))) {
+    return res.status(404).json({ error: t(lang, 'user_not_found') })
+  }
+
+  const current = await db.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?').get(req.user.id, id)
+  if (current) {
+    await db.prepare('DELETE FROM follows WHERE follower_id = ? AND following_id = ?').run(req.user.id, id)
+  } else {
+    await db.prepare('INSERT INTO follows (follower_id, following_id) VALUES (?, ?)').run(req.user.id, id)
+  }
+  res.json({ ...await socialFor(id, req.user.id) })
+})
+
+router.get('/:id', optionalAuth, async (req, res) => {
+  const lang = langFromRequest(req)
+  const id = validId(req.params.id)
+  if (!id) return res.status(404).json({ error: t(lang, 'user_not_found') })
   const user = await db.prepare(`SELECT ${PUBLIC_USER_COLUMNS} FROM users WHERE id = ?`).get(id)
-  if (!user) return res.status(404).json({ error: t(langFromRequest(req), 'not_found') })
-  res.json({ user: { ...publicUser(user), stats: await statsFor(id) } })
+  if (!user) return res.status(404).json({ error: t(lang, 'user_not_found') })
+  const social = await socialFor(id, req.user?.id ?? null)
+  res.json({ user: { ...publicUser(user), stats: await statsFor(id), ...social } })
 })
 
 export async function deleteUser(req, res) {

@@ -1,15 +1,11 @@
 import multer from 'multer'
-import fs from 'node:fs'
 import path from 'node:path'
-import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { ALLOWED_IMAGE_EXT, MAX_UPLOAD_BYTES, langFromRequest, validateImageBuffer, validateImageFile } from './validation.js'
+import { MAX_UPLOAD_BYTES, langFromRequest, validateImageBuffer, validateImageFile } from './validation.js'
 import { t } from './messages.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 export const uploadsDir = path.join(root, 'uploads')
-
-fs.mkdirSync(uploadsDir, { recursive: true })
 
 const storage = multer.memoryStorage()
 
@@ -38,21 +34,6 @@ export function requireValidImageBuffer(req, _res, next) {
   const failure = new Error(error)
   failure.status = 400
   return next(failure)
-}
-
-export function saveUpload(file) {
-  if (!file) return null
-  const error = validateImageFile(file) || validateImageBuffer(file)
-  if (error) {
-    const failure = new Error(error)
-    failure.status = 400
-    throw failure
-  }
-  const originalExt = path.extname(file.originalname).toLowerCase()
-  const ext = ALLOWED_IMAGE_EXT.includes(originalExt) ? originalExt : '.png'
-  const filename = `${crypto.randomUUID()}${ext}`
-  fs.writeFileSync(path.join(uploadsDir, filename), file.buffer)
-  return `/uploads/${filename}`
 }
 
 export function uploadErrorHandler(err, req, res, next) {

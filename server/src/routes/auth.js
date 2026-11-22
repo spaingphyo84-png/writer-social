@@ -3,7 +3,8 @@ import { adminValue, db, isAdminEmail } from '../db.js'
 import { hashPassword, comparePassword, signToken, publicUser, requireAuth, PUBLIC_USER_COLUMNS } from '../auth.js'
 import { validateRegister, langFromRequest } from '../validation.js'
 import { t } from '../messages.js'
-import { requireValidImageBuffer, uploadAvatar, saveUpload } from '../upload.js'
+import { requireValidImageBuffer, uploadAvatar } from '../upload.js'
+import { storeImage } from '../media.js'
 import { loginRateLimit, registerRateLimit } from '../rateLimit.js'
 import { issueCaptcha, requireCaptcha } from '../captcha.js'
 import { isRegistrationOpen, requireRegistrationOpen } from '../lockdown.js'
@@ -23,7 +24,7 @@ router.post('/register', requireRegistrationOpen, registerRateLimit, uploadAvata
   if (existing) return res.status(409).json({ error: t(lang, 'email_exists') })
 
   try {
-    const avatarUrl = saveUpload(req.file)
+    const avatarUrl = await storeImage(req.file, lang)
     const info = await db.prepare(`
       INSERT INTO users (email, password_hash, author_name, pen_name, bio, avatar_url, is_admin)
       VALUES (?, ?, ?, ?, ?, ?, ?)

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useLocale } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
 import { ModalShell } from './Common'
+import { compressImage } from '../utils'
 
 type Mode = 'login' | 'register'
 
@@ -59,7 +60,7 @@ export default function AuthModal({ registrationOpen }: AuthModalProps) {
     openAuth(next)
   }
 
-  function chooseAvatar(file: File | undefined) {
+  async function chooseAvatar(file: File | undefined) {
     if (!file) return
     const name = file.name.toLowerCase()
     if (file.type.startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/.test(name)) {
@@ -74,8 +75,9 @@ export default function AuthModal({ registrationOpen }: AuthModalProps) {
       toast(t('file.tooLarge'), 'error')
       return
     }
-    setAvatar(file)
-    setPreview(URL.createObjectURL(file))
+    const compressed = await compressImage(file)
+    setAvatar(compressed)
+    setPreview(URL.createObjectURL(compressed))
   }
 
   async function submit() {

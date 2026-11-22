@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, Link2, MessageCircle, MoreHorizontal, Pencil, Repeat2, Share2, Trash2 } from 'lucide-react'
+import { Bookmark, Copy, Link2, MessageCircle, MoreHorizontal, Pencil, Repeat2, Share2, Trash2 } from 'lucide-react'
 import { api } from '../api'
 import { appOrigin, resolveAppUrl } from '../config'
 import { useAuth } from '../context/AuthContext'
@@ -23,14 +23,16 @@ interface PostCardProps {
   onDeleted: (id: number) => void
   onUpdated: (post: Post) => void
   onRepost: (post: Post) => void
+  onBookmarkRemoved?: (id: number) => void
 }
 
-export default function PostCard({ post, onDeleted, onUpdated, onRepost }: PostCardProps) {
+export default function PostCard({ post, onDeleted, onUpdated, onRepost, onBookmarkRemoved }: PostCardProps) {
   const { t } = useLocale()
   const { user, openAuth } = useAuth()
   const { toast } = useToast()
   const [counts, setCounts] = useState(post.counts)
   const [viewerReaction, setViewerReaction] = useState<ReactionType | null>(post.viewerReaction)
+  const [bookmarked, setBookmarked] = useState(post.bookmarked)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState(post.counts.comments)
   const [expanded, setExpanded] = useState(false)
@@ -40,6 +42,7 @@ export default function PostCard({ post, onDeleted, onUpdated, onRepost }: PostC
 
   useEffect(() => setCounts(post.counts), [post.counts])
   useEffect(() => setViewerReaction(post.viewerReaction), [post.viewerReaction])
+  useEffect(() => setBookmarked(post.bookmarked), [post.bookmarked])
   useEffect(() => setCommentCount(post.counts.comments), [post.counts.comments])
 
   const isOwner = user?.id === post.author.id
@@ -82,6 +85,24 @@ export default function PostCard({ post, onDeleted, onUpdated, onRepost }: PostC
       if (result.repost) onRepost(result.repost)
       setCounts((current) => ({ ...current, shares: result.shareCount }))
       toast(t('post.reposted'))
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('common.error'), 'error')
+    }
+  }
+
+  async function toggleBookmark() {
+    if (!user) {
+      toast(t('post.loginToBookmark'), 'info')
+      openAuth('login')
+      return
+    }
+    try {
+      const result = await api.bookmarkPost(post.id)
+      setBookmarked(result.bookmarked)
+      if (!result.bookmarked) {
+        onBookmarkRemoved?.(post.id)
+        toast(t('post.removedFromSaved'))
+      }
     } catch (error) {
       toast(error instanceof Error ? error.message : t('common.error'), 'error')
     }
@@ -223,6 +244,16 @@ export default function PostCard({ post, onDeleted, onUpdated, onRepost }: PostC
             </>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => void toggleBookmark()}
+          className={`col-span-2 flex items-center justify-center gap-1.5 rounded-lg px-1.5 py-2 text-xs font-semibold transition hover:bg-parchment-100 dark:hover:bg-ink-800 sm:col-span-1 ${
+            bookmarked ? 'text-amber-600 dark:text-gold-400' : 'text-ink-700/70 dark:text-parchment-200/65'
+          }`}
+        >
+          <Bookmark className={`h-4 w-4 ${bookmarked ? 'fill-current' : ''}`} />
+          {t(bookmarked ? 'post.unbookmark' : 'post.bookmark')}
+        </button>
       </div>
 
       <Comments postId={post.id} open={commentsOpen} count={commentCount} onCountChange={setCommentCount} />

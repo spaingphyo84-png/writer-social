@@ -3,6 +3,7 @@ import { containsSpam, isGibberishName } from './spam.js'
 
 export const CATEGORIES = ['poem', 'story', 'general']
 export const REACTIONS = ['love', 'haha', 'sad']
+export const FEEDBACK_CATEGORIES = ['suggestion', 'bug', 'other']
 export const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp']
 export const ALLOWED_IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp']
 export const VIDEO_EXT = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v', '.ogv', '.3gp', '.wmv', '.flv']
@@ -163,4 +164,19 @@ export function validateComment(body, lang = 'en') {
   if (String(body.body ?? '').trim().length > 1000) return { error: t(lang, 'comment_too_long') }
   if (containsSpam(comment)) return { error: t(lang, 'spam_detected') }
   return { value: { body: comment } }
+}
+
+export function validateFeedback(body, lang = 'en') {
+  const category = cleanText(body.category, 20)
+  const message = cleanText(body.message, 2000)
+  if (!FEEDBACK_CATEGORIES.includes(category)) return { error: t(lang, 'invalid_feedback_category') }
+  if (!message) return { error: t(lang, 'feedback_required') }
+  if (String(body.message ?? '').trim().length > 2000) return { error: t(lang, 'feedback_too_long') }
+  if (containsSpam(message)) return { error: t(lang, 'spam_detected') }
+  return { value: { category, message } }
+}
+
+export function searchTerm(value) {
+  const term = cleanText(value, 100).replace(/[\\%_]/g, (character) => `\\${character}`)
+  return term ? `%${term.toLowerCase()}%` : null
 }

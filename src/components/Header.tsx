@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Feather, Globe2, LogOut, Moon, PenLine, Search, Sun, UserRound } from 'lucide-react'
+import { Feather, Globe2, Inbox, LogOut, MessageSquareText, Moon, PenLine, Search, Sun, UserRound } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useLocale } from '../context/SettingsContext'
 import { useTheme } from '../context/SettingsContext'
@@ -12,9 +12,11 @@ interface HeaderProps {
   registrationOpen: boolean
   onToggleRegistration?: () => void
   togglingRegistration?: boolean
+  onOpenFeedback: () => void
+  onOpenAdminFeedback: () => void
 }
 
-export default function Header({ search, onSearchChange, onWrite, registrationOpen, onToggleRegistration, togglingRegistration }: HeaderProps) {
+export default function Header({ search, onSearchChange, onWrite, registrationOpen, onToggleRegistration, togglingRegistration, onOpenFeedback, onOpenAdminFeedback }: HeaderProps) {
   const { t, locale, setLocale } = useLocale()
   const { theme, toggleTheme } = useTheme()
   const { user, openAuth, openProfile, logout } = useAuth()
@@ -66,6 +68,16 @@ export default function Header({ search, onSearchChange, onWrite, registrationOp
           <button type="button" onClick={toggleTheme} aria-label={t('header.theme')} className="icon-btn border border-parchment-300 bg-parchment-50 dark:border-ink-700 dark:bg-ink-900">
             {theme === 'dark' ? <Sun className="h-[18px] w-[18px] text-gold-400" /> : <Moon className="h-[18px] w-[18px]" />}
           </button>
+
+          <button type="button" onClick={onOpenFeedback} aria-label={t('feedback.button')} title={t('feedback.button')} className="icon-btn border border-parchment-300 bg-parchment-50 dark:border-ink-700 dark:bg-ink-900">
+            <MessageSquareText className="h-[18px] w-[18px]" />
+          </button>
+
+          {user?.isAdmin && (
+            <button type="button" onClick={onOpenAdminFeedback} aria-label={t('admin.feedbackTitle')} title={t('admin.feedbackTitle')} className="icon-btn border border-parchment-300 bg-parchment-50 text-terracotta-600 dark:border-ink-700 dark:bg-ink-900 dark:text-gold-400">
+              <Inbox className="h-[18px] w-[18px]" />
+            </button>
+          )}
 
           {user?.isAdmin && onToggleRegistration && (
             <button
