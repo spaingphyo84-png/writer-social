@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { db } from '../db.js'
+import { adminValue, db, isAdminEmail } from '../db.js'
 import { hashPassword, comparePassword, signToken, publicUser, requireAuth, PUBLIC_USER_COLUMNS } from '../auth.js'
 import { validateRegister, langFromRequest } from '../validation.js'
 import { t } from '../messages.js'
@@ -25,9 +25,9 @@ router.post('/register', requireRegistrationOpen, registerRateLimit, uploadAvata
   try {
     const avatarUrl = saveUpload(req.file)
     const info = await db.prepare(`
-      INSERT INTO users (email, password_hash, author_name, pen_name, bio, avatar_url)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(email, hashPassword(password), authorName, penName, bio, avatarUrl)
+      INSERT INTO users (email, password_hash, author_name, pen_name, bio, avatar_url, is_admin)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(email, hashPassword(password), authorName, penName, bio, avatarUrl, adminValue(db, isAdminEmail(email)))
     const user = await db.prepare(`SELECT ${PUBLIC_USER_COLUMNS} FROM users WHERE id = ?`).get(info.lastInsertRowid)
     res.status(201).json({ token: signToken(user), user: publicUser(user) })
   } catch (error) {

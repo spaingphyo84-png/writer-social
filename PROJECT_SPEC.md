@@ -187,7 +187,7 @@ All errors return `{ error: string }`; validation errors include a `message` in 
 - Two sample Myanmar writers with pen names, bios, and avatars (initials-based placeholder).
 - Multiple sample poems (ကဗျာ) and short stories (ဝတ္ထုတို) in Burmese plus a few general posts.
 - Seed reactions and comments so counters and threads look alive on first launch.
-- Demo login (also available as a one-click button in the sign-in modal): `kabya-moe@writersrealm.local` / `writer123` (second writer: `kalone-ni@writersrealm.local` / `writer123`).
+- No demo-login shortcut: every account, including seeded sample writers, signs in through `POST /api/auth/login` with an email and password.
 
 ### 4.8 Verification
 - `npm run build` (TypeScript + Vite) must pass with zero errors.
@@ -204,6 +204,7 @@ All errors return `{ error: string }`; validation errors include a `message` in 
 - Uploaded files served statically from `/uploads` with strict MIME filtering; original filenames discarded.
 - Request body limits: 100 kB JSON, 8 MB multipart.
 - No video bytes ever accepted or stored.
+- Admin privileges are granted only to comma-separated emails in `ADMIN_EMAILS`; the public demo account `kabya-moe@writersrealm.local` is always demoted.
 
 ---
 
@@ -233,4 +234,5 @@ Optional environment variables (see `.env.example`):
 ```
 PORT=3001
 JWT_SECRET=replace-with-a-long-random-string
+ADMIN_EMAILS=owner@example.com
 ```

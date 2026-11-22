@@ -184,19 +184,6 @@ export default function AuthModal({ registrationOpen }: AuthModalProps) {
         </button>
       </form>
 
-      {mode === 'login' && (
-        <div className="mt-4 rounded-xl border border-dashed border-parchment-300 p-3 dark:border-ink-700">
-          <p className="mb-2 text-[11px] font-semibold text-ink-700/60 dark:text-parchment-200/55">{t('auth.demoTitle')}</p>
-          <button
-            type="button"
-            onClick={() => { setEmail('kabya-moe@writersrealm.local'); setPassword('writer123') }}
-            className="btn-secondary w-full !py-2 text-xs"
-          >
-            {t('auth.demoButton')}
-          </button>
-        </div>
-      )}
-
       <button type="button" onClick={() => switchMode(mode === 'login' ? 'register' : 'login')} className="mt-4 flex w-full items-center justify-center gap-1 text-xs font-semibold text-terracotta-600 hover:underline dark:text-gold-400">
         {mode === 'login' ? t('auth.toRegister') : t('auth.toLogin')}
       </button>

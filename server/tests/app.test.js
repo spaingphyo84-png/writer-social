@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 
+const ADMIN_EMAIL = 'owner-test@writersrealm.local'
+const ADMIN_PASSWORD = 'owner-strong-password-123'
+
 process.env.WRITERS_REALM_DB = ':memory:'
+process.env.ADMIN_EMAILS = ADMIN_EMAIL
 
 const { default: app } = await import('../src/app.js')
 const { uploadsDir } = await import('../src/upload.js')
@@ -16,6 +20,21 @@ before(async () => {
     const instance = app.listen(0, () => resolve(instance))
   })
   base = `http://127.0.0.1:${server.address().port}`
+
+  const form = new FormData()
+  form.set('authorName', 'Owner Writer')
+  form.set('penName', 'Owner Pen')
+  form.set('email', ADMIN_EMAIL)
+  form.set('password', ADMIN_PASSWORD)
+  form.set('bio', 'Personal admin account for tests')
+  await withCaptcha(form)
+  const registered = await api('/api/auth/register', {
+    method: 'POST',
+    headers: { 'X-Forwarded-For': '203.0.113.2' },
+    body: form,
+  })
+  assert.equal(registered.status, 201)
+  assert.equal(registered.data.user.isAdmin, true)
 })
 
 after(() => {
@@ -77,6 +96,36 @@ test('seed data includes writers, poems and short stories', async () => {
   assert.ok(data.posts.every((post) => post.author.penName))
   const writers = await api('/api/users/featured')
   assert.ok(writers.data.writers.length >= 2)
+})
+
+test('demo account has no admin rights and no demo login endpoint exists', async () => {
+  const headers = { 'X-Forwarded-For': '203.0.113.5' }
+  const demo = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+  assert.equal(demo.user.isAdmin, false)
+  const { isAdminEmail } = await import('../src/db.js')
+  assert.equal(isAdminEmail('kabya-moe@writersrealm.local'), false)
+
+  for (const route of ['/api/auth/demo', '/api/auth/demo-login']) {
+    for (const method of ['GET', 'POST']) {
+      const response = await api(route, {
+        method,
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: method === 'POST' ? '{}' : undefined,
+      })
+      assert.equal(response.status, 404)
+    }
+  }
+})
+
+test('existing demo admin privileges are revoked on startup', async () => {
+  const { adminValue, db, initializeDatabase } = await import('../src/db.js')
+  await db.prepare('UPDATE users SET is_admin = ? WHERE email = ?')
+    .run(adminValue(db, true), 'kabya-moe@writersrealm.local')
+  await initializeDatabase()
+  const demo = await loginAs('kabya-moe@writersrealm.local', 'writer123', {
+    'X-Forwarded-For': '203.0.113.6',
+  })
+  assert.equal(demo.user.isAdmin, false)
 })
 
 test('registration, login and profile update work', async () => {
@@ -303,6 +352,10 @@ async function loginAs(email, password = 'writer123', headers = {}) {
   return result.data
 }
 
+async function loginAdmin(headers = {}) {
+  return loginAs(ADMIN_EMAIL, ADMIN_PASSWORD, headers)
+}
+
 test('registration is limited to two accounts per hour per IP', async () => {
   const headers = { 'X-Forwarded-For': '203.0.113.50' }
   for (let index = 1; index <= 2; index += 1) {
@@ -346,7 +399,7 @@ test('post creation is limited to three posts per fifteen minutes per user/IP', 
 
 test('admins can delete any post and remove spam users', async () => {
   const headers = { 'X-Forwarded-For': '203.0.113.70' }
-  const admin = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+  const admin = await loginAdmin(headers)
   const member = await loginAs('kalone-ni@writersrealm.local', 'writer123', headers)
   assert.equal(admin.user.isAdmin, true)
   assert.equal(member.user.isAdmin, false)
@@ -476,7 +529,7 @@ test('captcha, honeypot and spam patterns reject bot submissions', async () => {
 test('admin can clean legacy spam posts and accounts', async () => {
   const { db } = await import('../src/db.js')
   const headers = { 'X-Forwarded-For': '203.0.113.91' }
-  const admin = await loginAs('kabya-moe@writersrealm.local', 'writer123', headers)
+  const admin = await loginAdmin(headers)
   const memberHeaders = { 'X-Forwarded-For': '203.0.113.92' }
   const member = await loginAs('kalone-ni@writersrealm.local', 'writer123', memberHeaders)
 
@@ -596,7 +649,7 @@ test('uploads reject oversized and fake images', async () => {
 test('admins can pause and resume registrations', async () => {
   const adminHeaders = { 'X-Forwarded-For': '203.0.113.110' }
   const memberHeaders = { 'X-Forwarded-For': '203.0.113.111' }
-  const admin = await loginAs('kabya-moe@writersrealm.local', 'writer123', adminHeaders)
+  const admin = await loginAdmin(adminHeaders)
   const member = await loginAs('kalone-ni@writersrealm.local', 'writer123', memberHeaders)
   const lockdownRequest = (token, registrationOpen, headers) => auth(token, {
     method: 'POST',

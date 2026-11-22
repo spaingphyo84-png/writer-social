@@ -7,7 +7,20 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 export const dataDir = path.join(root, 'data')
 export const dbPath = path.join(dataDir, 'writers-realm.db')
-export const ADMIN_EMAIL = 'kabya-moe@writersrealm.local'
+const DEMO_EMAIL = 'kabya-moe@writersrealm.local'
+const ADMIN_EMAILS = new Set(
+  String(process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+)
+if (ADMIN_EMAILS.delete(DEMO_EMAIL)) {
+  console.warn('[writer-realm] kabya-moe@writersrealm.local is a public demo account and cannot be an admin.')
+}
+
+export function isAdminEmail(email) {
+  return ADMIN_EMAILS.has(String(email ?? '').trim().toLowerCase())
+}
 
 if (!process.env.DATABASE_URL) fs.mkdirSync(dataDir, { recursive: true })
 
@@ -364,7 +377,7 @@ const seedComments = [
   { post: 5, user: 1, body: 'စာအိမ်ဆိုတဲ့ အခေါ်အဝေါ်လေး အရမ်းလှတယ်။' },
 ]
 
-function adminValue(db, isAdmin) {
+export function adminValue(db, isAdmin) {
   return db.dialect === 'postgres' ? isAdmin : (isAdmin ? 1 : 0)
 }
 
@@ -404,7 +417,7 @@ export async function seedDatabase(db) {
     for (const writer of seedWriters) {
       const info = await insertUser.run(
         writer.email, passwordHash, writer.authorName, writer.penName, writer.bio,
-        adminValue(db, writer.email === ADMIN_EMAIL), created,
+        adminValue(db, isAdminEmail(writer.email)), created,
       )
       userIds.push(Number(info.lastInsertRowid))
     }
@@ -454,35 +467,19 @@ async function ensureAdminColumn(database) {
   }
 }
 
-async function ensureDemoUser(database) {
-  const existing = await database.prepare('SELECT id FROM users WHERE email = ?').get(ADMIN_EMAIL)
-  if (existing) return
-
-  const writer = seedWriters[0]
-  const columns = '(email, password_hash, author_name, pen_name, bio, is_admin, created_at)'
-  const values = 'VALUES (?, ?, ?, ?, ?, ?, ?)'
-  const conflict = database.dialect === 'postgres' ? ' ON CONFLICT (email) DO NOTHING' : ' OR IGNORE'
-  const insert = database.dialect === 'postgres'
-    ? `INSERT INTO users ${columns} ${values}${conflict}`
-    : `INSERT${conflict} INTO users ${columns} ${values}`
-
-  await database.prepare(insert).run(
-    ADMIN_EMAIL,
-    bcrypt.hashSync('writer123', 10),
-    writer.authorName,
-    writer.penName,
-    writer.bio,
-    adminValue(database, true),
-    ago('6 days'),
-  )
+async function syncAdminEmails(database) {
+  await database.prepare('UPDATE users SET is_admin = ?').run(adminValue(database, false))
+  for (const email of ADMIN_EMAILS) {
+    await database.prepare('UPDATE users SET is_admin = ? WHERE email = ?')
+      .run(adminValue(database, true), email)
+  }
 }
 
 export async function initializeDatabase() {
   await db.exec(SCHEMA_SQL)
   await ensureAdminColumn(db)
   await seedDatabase(db)
-  await ensureDemoUser(db)
-  await db.prepare('UPDATE users SET is_admin = ? WHERE email = ?').run(adminValue(db, true), ADMIN_EMAIL)
+  await syncAdminEmails(db)
 }
 
 await initializeDatabase()
